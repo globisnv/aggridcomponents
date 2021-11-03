@@ -2584,6 +2584,7 @@ export class DataGrid extends NGGridDirective {
 
     onSelectionChanged() {
         console.log('GLOBIS AG LOG: selection change');
+        console.log(this.onSelectedRowsChanged);
         if(this.onSelectionChangedTimeout) {
             clearTimeout(this.onSelectionChangedTimeout);
         }
@@ -2599,7 +2600,9 @@ export class DataGrid extends NGGridDirective {
 
             // Trigger event on selection change in grouo mode
             if (this.onSelectedRowsChanged) {
+                console.log('GLOBIS AG LOG: selection change fire');
                 this.onSelectedRowsChanged();
+                console.log('GLOBIS AG LOG: selection change fired');
             }
 
             return;
@@ -2791,10 +2794,13 @@ export class DataGrid extends NGGridDirective {
 
     onCellDoubleClicked(params: any) {
         console.log('GLOBIS AG LOG: cell dbl click');
+        console.log(this.onCellDoubleClick);
         if(this.enabled) {
             // need timeout because the selection is also in a 250ms timeout
             setTimeout(() => {
+                console.log('GLOBIS AG LOG: cell dbl click fire');
                 this.onCellDoubleClickedEx(params);
+                console.log('GLOBIS AG LOG: cell dbl click fired');
             }, 250);
         }
     }
@@ -2830,13 +2836,15 @@ export class DataGrid extends NGGridDirective {
             //							foundsetIndex = -1;
             //						}
             //						$scope.handlers.onCellDoubleClick(foundsetIndex, columnIndex, record, params.event);
-
+            console.log('GLOBIS AG LOG: cell dbl click fire');
             this.onCellDoubleClick(this.getFoundsetIndexFromEvent(params), this.getColumnIndex(params.column.colId), this.getRecord(params), params.event);
+            console.log('GLOBIS AG LOG: cell dbl click fired');
         }
     }
 
     onCellContextMenu(params: any) {
         console.log('GLOBIS AG LOG: context menu');
+        console.log(this.onCellRightClick);
         if(this.enabled && !params.node.rowPinned && !params.node.group) {
             this.log.debug(params);
             this.selectionEvent = { type: 'click', event: params.event, rowIndex: params.node.rowIndex };
@@ -2844,7 +2852,9 @@ export class DataGrid extends NGGridDirective {
             if (this.onCellRightClick) {
                 // Added setTimeOut to enable onColumnDataChangeEvent to go first; must be over 250, so selection is sent first
                 setTimeout(() => {
+                    console.log('GLOBIS AG LOG: context menu fire');
                     this.onCellRightClick(this.getFoundsetIndexFromEvent(params), this.getColumnIndex(params.column.colId), this.getRecord(params), params.event);
+                    console.log('GLOBIS AG LOG: context menu fired');
                 }, 350);
             }
         }
