@@ -2583,6 +2583,7 @@ export class DataGrid extends NGGridDirective {
     }
 
     onSelectionChanged() {
+        console.log('GLOBIS AG LOG: selection change');
         if(this.onSelectionChangedTimeout) {
             clearTimeout(this.onSelectionChangedTimeout);
         }
@@ -2789,6 +2790,7 @@ export class DataGrid extends NGGridDirective {
     }
 
     onCellDoubleClicked(params: any) {
+        console.log('GLOBIS AG LOG: cell dbl click');
         if(this.enabled) {
             // need timeout because the selection is also in a 250ms timeout
             setTimeout(() => {
@@ -2798,6 +2800,7 @@ export class DataGrid extends NGGridDirective {
     }
 
     onCellDoubleClickedEx(params: any) {
+        console.log('GLOBIS AG LOG: onCellDoubleClickedEx');
         this.log.debug(params);
         if (this.onCellDoubleClick && !params.node.rowPinned) {
             //						var row = params.data;
@@ -2833,6 +2836,7 @@ export class DataGrid extends NGGridDirective {
     }
 
     onCellContextMenu(params: any) {
+        console.log('GLOBIS AG LOG: context menu');
         if(this.enabled && !params.node.rowPinned && !params.node.group) {
             this.log.debug(params);
             this.selectionEvent = { type: 'click', event: params.event, rowIndex: params.node.rowIndex };
