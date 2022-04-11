@@ -1,45 +1,80 @@
 import { Component, ElementRef, Inject, Input, ViewChild } from '@angular/core';
-import { DateTimeAdapter, OwlDateTimeIntl } from '@danielmoncada/angular-datetime-picker';
 import { EditorDirective } from './editor';
 import { ICellEditorParams } from '@ag-grid-community/core';
 import { DOCUMENT } from '@angular/common';
-import { PickerType } from '@danielmoncada/angular-datetime-picker/lib/date-time/date-time.class';
-import { Format, getFirstDayOfWeek, ServoyPublicService } from '@servoy/public';
-import { DateTime } from 'luxon';
+import { Format, FormattingService, getFirstDayOfWeek, ServoyPublicService } from '@servoy/public';
+import { DateTime as DateTimeLuxon} from 'luxon';
+import { DateTime, Namespace, Options, TempusDominus } from '@servoy/tempus-dominus';
+import { ChangeEvent } from '@servoy/tempus-dominus/types/utilities/event-types';
 
 @Component({
     selector: 'aggrid-datepicker',
     template: `
-      <div class="input-group date bts-calendar-container ag-cell-edit-input" style="flex-wrap: nowrap" #element>
-        <input style="form-control form-control svy-line-height-normal" [(ngModel)]="selectedValue" [svyFormat]="format" #inputElement>
-        <span tabindex="-1" (click)="onOpenPopup($event)"
-          class="input-group-text input-group-append ag-custom-component-popup" style="padding:7px;" [owlDateTimeTrigger]="datetime"><span class="far fa-calendar-alt"></span></span>
-        <input class="form-control" style="position:absolute;bottom:0px;width:0px;height:0px;border:0px;padding:0px" [owlDateTime]="datetime" (dateTimeChange)="dateChanged($event)" [value]="initialValue">
-        <owl-date-time #datetime [firstDayOfWeek]="firstDayOfWeek" [hour12Timer]="hour12Timer" [pickerType]="pickerType" [showSecondsTimer]="showSecondsTimer"></owl-date-time>
-      </div>
+    <div class="input-group date bts-calendar-container ag-cell-edit-input" style="flex-wrap: nowrap" data-td-target-input='nearest' data-td-target-toggle='nearest' #element>
+    <input style="form-control form-control svy-line-height-normal" [(ngModel)]="selectedValue" [svyFormat]="format" data-td-target='#datetimepicker1' #inputElement>
+    </div>
     `,
-    providers: [OwlDateTimeIntl]
+    providers: []
 })
 export class DatePicker extends EditorDirective {
 
     @ViewChild('inputElement') inputElementRef: ElementRef;
-    
-    firstDayOfWeek = 1;
-    hour12Timer = false;
-    pickerType: PickerType = 'both';
-    showSecondsTimer = false;
 
-    @Input() selectedValue: any;
+    @Input() selectedValue: Date;
+
+
+    picker: TempusDominus;
+
+    readonly config: Options = {
+        allowInputToggle: true,
+        useCurrent: false,
+        display: {
+            components: {
+                useTwentyfourHour: true,
+                decades: true,
+                year: true,
+                month: true,
+                date: true,
+                hours: true,
+                minutes: true,
+                seconds: true
+            },
+            calendarWeeks: true,
+            buttons: {
+                today: true,
+                close: true,
+                clear: true,
+            },
+            inline: false
+        },
+        restrictions: {
+        },
+//        hooks: {
+//        },
+        localization: {
+            startOfTheWeek: 1,
+            locale: 'en'
+        }
+    };
 
     format: Format;
 
-    constructor(servoyService: ServoyPublicService, dateTimeAdapter: DateTimeAdapter<any>, @Inject(DOCUMENT) private doc: Document) {
+    constructor(servoyService: ServoyPublicService,  @Inject(DOCUMENT) private doc: Document, formattingService: FormattingService,) {
         super();
-        dateTimeAdapter.setLocale(servoyService.getLocale());
+        this.config.localization.startOfTheWeek = getFirstDayOfWeek(servoyService.getLocale());
+        const lts = DateTimeLuxon.now().setLocale(servoyService.getLocale()).toLocaleString(DateTimeLuxon.DATETIME_FULL).toUpperCase();
+        this.config.display.components.useTwentyfourHour = lts.indexOf('AM') >= 0 || lts.indexOf('PM') >= 0;
+        this.config.localization.locale = servoyService.getLocale();
+        this.loadCalendarLocale(this.config.localization.locale);
 
-        this.firstDayOfWeek = getFirstDayOfWeek(servoyService.getLocale());
-        const lts = DateTime.now().setLocale(servoyService.getLocale()).toLocaleString(DateTime.DATETIME_FULL).toUpperCase();
-        this.hour12Timer = lts.indexOf('AM') >= 0 || lts.indexOf('PM') >= 0;
+         this.config.hooks = {
+            inputFormat: (date: DateTime) => formattingService.format(date, this.format, false),
+            inputParse: (value: any) => {
+                const parsed  = formattingService.parse(value, this.format, true, this.selectedValue);
+                if (parsed instanceof Date) return  new DateTime(parsed);
+                return null;
+            }
+        };
     }
 
     agInit(params: ICellEditorParams): void {
@@ -53,14 +88,13 @@ export class DatePicker extends EditorDirective {
             this.format = new Format();
             this.format.type = 'DATETIME';
             if(column && column.format && typeof column.format === 'string') {
-                const splitedEditFormat = column.format.split("|");
+                const splitedEditFormat = column.format.split('|');
                 this.format.display = splitedEditFormat[0];
                 if(splitedEditFormat.length === 4 && splitedEditFormat[3] === 'mask') {
                     this.format.edit = splitedEditFormat[1];
                     this.format.isMask = true;
                     this.format.placeHolder = splitedEditFormat[2];
-                }
-                else if(splitedEditFormat.length > 1) {
+                } else if(splitedEditFormat.length > 1) {
                     this.format.edit = splitedEditFormat[1];
                 }
             } else {
@@ -71,25 +105,37 @@ export class DatePicker extends EditorDirective {
 
         const showCalendar = format.indexOf('y') >= 0 || format.indexOf('M') >= 0;
         const showTime = format.indexOf('h') >= 0 || format.indexOf('H') >= 0 || format.indexOf('m') >= 0;
-        if (showCalendar) {
-            if (showTime) this.pickerType = 'both';
-            else this.pickerType = 'calendar';
-        } else this.pickerType = 'timer';
-        this.showSecondsTimer = format.indexOf('s') >= 0;
-        this.hour12Timer = format.indexOf('h') >= 0 || format.indexOf('a') >= 0 || format.indexOf('A') >= 0;
+        const showSecondsTimer = format.indexOf('s') >= 0;
+        this.config.display.components.useTwentyfourHour = !(format.indexOf('h') >= 0 || format.indexOf('a') >= 0 || format.indexOf('A') >= 0);
+        this.config.display.components.decades = showCalendar;
+        this.config.display.components.year = showCalendar;
+        this.config.display.components.month = showCalendar;
+        this.config.display.components.date = showCalendar;
+        this.config.display.components.hours = showTime;
+        this.config.display.components.minutes = showTime;
+        this.config.display.components.seconds = showTime;
+        this.config.display.components.seconds = showSecondsTimer;
+
     }
 
     ngAfterViewInit(): void {
+        if (this.selectedValue) this.config.viewDate = DateTime.convert(this.selectedValue);
+        this.picker = new TempusDominus(this.inputElementRef.nativeElement, this.config);
+        if ( this.config.viewDate ) this.picker.dates.setValue( this.config.viewDate );
+        this.picker.subscribe(Namespace.events.change, (event) => this.dateChanged(event));
         setTimeout(() => {
             this.inputElementRef.nativeElement.select();
-        }, 0);
-    }
-
-    onOpenPopup(event: MouseEvent) {
-        const dateContainer = this.doc.getElementsByTagName('owl-date-time-container');
-        if (dateContainer && dateContainer.length) {
+            this.picker.show();
+            const dateContainer = this.doc.getElementsByClassName('tempus-dominus-widget calendarWeeks show');
+             if (dateContainer && dateContainer.length) {
             dateContainer[0].classList.add('ag-custom-component-popup');
         }
+        }, 0);
+         this.picker.subscribe(Namespace.events.hide, () => this.params.stopEditing());
+    }
+
+    ngOnDestroy() {
+        if (this.picker !== null) this.picker.dispose();
     }
 
     isPopup(): boolean {
@@ -97,13 +143,34 @@ export class DatePicker extends EditorDirective {
     }
 
     // returns the new value after editing
-    getValue(): any {
-        return this.selectedValue;
+    getValue(): Date {
+        const value = this.inputElementRef.nativeElement.value;
+        if (value) return this.config.hooks.inputParse(value);
+        return null;
     }
 
-    dateChanged(e: any): any {
-        if (e && e.value) {
-            this.selectedValue = e.value;
+    public dateChanged(event: ChangeEvent) {
+        if (event.type === 'change.td') {
+            if ((event.date && this.selectedValue && event.date.getTime() === this.selectedValue.getTime()) ||
+                (!event.date && !this.selectedValue)) return;
+            this.selectedValue = event.date;
         } else this.selectedValue = null;
+    }
+
+     private loadCalendarLocale(locale: string) {
+        const index = locale.indexOf('-');
+        let language = locale;
+        if (index > 0) {
+            language = locale.substring(0, index);
+        }
+        language = language.toLowerCase();
+        import(`@servoy/tempus-dominus/dist/locales/${language}.js`).then(
+            (module: { localization: { [key: string]: string } }) => {
+                this.config.localization = module.localization;
+                if (this.picker !== null) this.picker.updateOptions(this.config);
+            },
+            () => {
+                // ignore
+            });
     }
 }

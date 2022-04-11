@@ -1,6 +1,6 @@
 {
   "name": "@servoy/nggrids",
-  "version": "2.9.1",
+  "version": "2022.3.2",
   "peerDependencies": {
     "@angular/animations": "^13",
     "@angular/common": "^13",
@@ -9,12 +9,11 @@
     "luxon": "*"
   },
   "dependencies": {
-    "bootstrap": "^5",
-    "@ng-bootstrap/ng-bootstrap": "^10",
-    "@ag-grid-community/angular": "^26",
-    "@ag-grid-enterprise/all-modules": "^26",
-    "@danielmoncada/angular-datetime-picker": "^12",
-    "@angular/cdk": "^13",
+    "@angular/cdk": "<14",
+    "@ng-bootstrap/ng-bootstrap": "<13",
+    "@popperjs/core": "<3",
+    "@servoy/tempus-dominus": "6.0.0-beta4",
+    "bootstrap": "<6",
     "tslib": "*"
   },
   "license": "MIT",

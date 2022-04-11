@@ -10,10 +10,15 @@
 	"libraries": [
 		{ "name": "groupingtable.css", "version": "1.0", "url": "aggrid/groupingtable/groupingtable.css", "mimetype": "text/css" }
 	],
+    "ng2Config": {
+        "dependencies": {
+           "csslibrary": ["~@servoy/tempus-dominus/dist/css/tempus-dominus.css;priority=5"]
+        }
+    },
 	"model":
 	{
-		"myFoundset": {"type": "foundset", "default" : {"foundsetSelector":""}, "pushToServer" : "allow" ,"initialPreferredViewPortSize": 50, "sendSelectionViewportInitially": true, "tags": {"allowaccess": "enabled", "doc": "The foundset where data are fetched from"} },
-		"columns": { "type": "column[]", "droppable" : true, "pushToServer": "shallow", "tags": {"allowaccess": "enabled", "doc": "List all columns to be used in table as dataprovider"}},
+		"myFoundset": {"type": "foundset", "default" : {"foundsetSelector":""}, "pushToServer" : "allow" , "foundsetDefinitionListener": true,"initialPreferredViewPortSize": 50, "sendSelectionViewportInitially": true, "tags": {"allowaccess": "enabled", "doc": "The foundset where data are fetched from"} },
+		"columns": { "type": "column[]", "droppable" : true, "pushToServer": "shallow", "tags": {"wizard": "autoshow", "allowaccess": "enabled", "doc": "List all columns to be used in table as dataprovider"}},
 		"columnState": { "type": "string", "tags": {"scope" : "private", "allowaccess": "enabled"}, "pushToServer": "allow"},
 		"columnStateOnError": { "type": "function", "tags": {"scope" : "private", "allowaccess": "enabled"}},
 		"_internalAutoSizeState": { "type": "boolean", "tags": {"scope" : "private", "allowaccess": "enabled"}, "pushToServer": "allow"},
@@ -23,7 +28,7 @@
 		"responsiveHeight": { "type": "int", "default": 300, "tags": {"doc": "Table's height to be set in a responsive form. When responsiveHeight is set to 0, the table will use 100% height of the parent container"} },
 		"rowHeight" : {"type" : "int", "default": 25, "tags": {"scope": "design", "doc": "The height in pixels of the table's rows"}},
 		"rowStyleClassDataprovider": { "type": "dataprovider", "forFoundset": "myFoundset", "tags": {"doc": "Use dataSource calculation as rowStyleClassDataprovider to set styleClass conditionally to rows. The calculation should return the class name (or names) to be applied to the row"} },
-		"styleClass": { "type": "styleclass", "default" : "ag-theme-bootstrap"},
+		"styleClass": { "type": "styleclass", "default" : "ag-theme-bootstrap" },
 		"enableColumnResize": { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Allow the user to resize columns"}},
 		"enableColumnMove": { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "If moving of columns is enabled"}},
 		"enableSorting": { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Enable column sorting by clickin on the column's header"}},
@@ -37,7 +42,6 @@
 		"iconConfig": { "type": "iconConfig", "tags": { "scope": "design" } },
 		"gridOptions": {"type": "map", "tags": {"doc": "Map where additional grid properties of ag-grid can be set"}},
 		"localeText": {"type": "map", "tags": {"doc": "Map where locales of ag-grid can be set"}},
-		"filterModel": {"type": "string", "tags": {"scope": "private"}},
 		"readOnly": {"type": "boolean", "default": false},
 		"enabled" : {"type": "enabled", "blockingOn": false, "default": true},
 		"readOnlyColumnIds": {"type": "object", "tags": {"scope" : "private"} },
@@ -47,7 +51,8 @@
 		"columnsAutoSizing": {"type": "string", "default" : null, "values": [{"SIZE_COLUMNS_TO_FIT":null}, {"AUTO_SIZE":"AUTO_SIZE"}, {"NONE":"NONE"}], "tags": {"doc": "Auto sizing for columns. SIZE_COLUMNS_TO_FIT: make the currently visible columns fit the screen. AUTO_SIZE: the grid will work out the best width to fit the contents of the 'visible' cells in the column. NONE: no auto sizing action performed"}},
 		"showGroupCount" : {"type": "boolean", "default" : false, "tags" : {"scope": "design", "doc": "When true the number of rows for groups is shown, beside the name"}},
 		"showLoadingIndicator":  { "type": "boolean", "default": true },
-		"editNextCellOnEnter":  { "type": "boolean", "default": false }
+		"editNextCellOnEnter":  { "type": "boolean", "default": false },
+		"tabSeq": { "type": "tabseq", "tags": { "scope": "design" } }
 	},
 	"handlers" : {
     	"onSelectedRowsChanged": {
@@ -326,6 +331,12 @@
 		},
 		"isToolPanelShowing": {
 			"returns": "boolean"
+		},
+		"moveColumn" : {
+			"parameters": [
+				{ "name": "id", "type": "string" },
+				{ "name": "index", "type": "int"}
+			]
 		}
     },
 	"internalApi" : {
@@ -370,7 +381,7 @@
 					"type": "string"
 				}
             ],
-			"allowaccess" : "enabled"
+			"allowaccess" : "enabled,visible"
 		},
 		"internalGetColumnIndex" : {
 			"parameters": [{
@@ -383,16 +394,16 @@
 	"types" : {
 		"column" : {
 			"footerText" : {"type" : "tagstring"},
-			"headerTitle": {"type" : "titlestring", "for": "dataprovider"},
+			"headerTitle": {"type" : "titlestring", "for": "dataprovider", "tags": { "wizard": "i18n", "useAsCaptionInDeveloper" : true, "captionPriority" : 1, "showInOutlineView": true }},
 			"footerStyleClass" : {"type" : "styleclass"},
 			"headerStyleClass" : {"type" : "styleclass"},
 			"headerTooltip" : {"type" : "tagstring"},
 			"headerGroup": {"type" : "tagstring", "tags": {"doc": "Header group, that this column will be part of"}},
 			"headerGroupStyleClass" : {"type" : "styleclass"},
-			"dataprovider": { "type": "dataprovider", "forFoundset": "myFoundset", "resolveValuelist" : true},
+			"dataprovider": { "type": "dataprovider", "forFoundset": "myFoundset", "resolveValuelist" : true, "pushToServer" : "allow", "tags": { "wizard": "1", "useAsCaptionInDeveloper" : true, "captionPriority" : 2 }},
 			"tooltip": { "type": "dataprovider", "forFoundset": "myFoundset"},
-			"styleClass" : {"type" : "styleclass"},
-			"styleClassDataprovider": { "type": "dataprovider", "forFoundset": "myFoundset", "tags": {"doc": "Use a Servoy calculation as styleClassDataprovider to set styleClass conditionally to the table cell"}},
+			"styleClass" : {"type" : "styleclass","tags": {"wizard": [{"name": "Pencil icon", "cls": "fa fa-pencil"}, {"name": "Trash icon", "cls": "fa fa-trash"}, {"name": "Eye icon", "cls": "fa fa-eye"}, {"name": "Gear icon", "cls": "fa fa-gear"}] } },
+			"styleClassDataprovider": { "type": "dataprovider", "forFoundset": "myFoundset", "tags": {"wizard": "2", "doc": "Use a Servoy calculation as styleClassDataprovider to set styleClass conditionally to the table cell"}},
 			"format" : {"type" : "format",  "for": ["valuelist", "dataprovider"]},
 			"valuelist": { "type": "valuelist", "for": "dataprovider", "forFoundset": "myFoundset"},
 			"visible":  { "type": "boolean", "default": true},
@@ -409,13 +420,14 @@
 			"editType": {"type": "string", "values": [{"NONE":null}, {"TEXTFIELD":"TEXTFIELD"}, {"DATEPICKER":"DATEPICKER"}, {"COMBOBOX":"COMBOBOX"}, {"TYPEAHEAD":"TYPEAHEAD"}, {"FORM":"FORM"}, {"CHECKBOX":"CHECKBOX"}], "tags": {"doc": "Type of editing used for that column"}},
 			"editForm": {"type": "form", "tags": {"doc": "Form used as custom editor"}},
 			"editFormSize": {"type": "dimension", "default" : {"width":300, "height":200}},
+			"stopEditingOnChange" : {"type": "boolean", "default" : false},
 			"filterType": {"type": "string", "values": [{"NONE":null}, {"TEXT":"TEXT"}, {"NUMBER":"NUMBER"}, {"DATE":"DATE"}, {"VALUELIST":"VALUELIST"}, {"RADIO":"RADIO"}]},
-			"id": {"type" : "string", "tags": {"showInOutlineView": true, "doc": "Used to set the column id (colId) property in the serialized column state json string of getColumnState and onColumnStateChanged" }},
-			"columnDef": {"type" : "oject", "tags": {"doc": "Map where additional column properties of ag-grid can be set"}},
+			"id": {"type" : "string", "tags": {"wizard": {"prefill" : "dataprovider"}, "showInOutlineView": true, "doc": "Used to set the column id (colId) property in the serialized column state json string of getColumnState and onColumnStateChanged" }},
+			"columnDef": {"type" : "map", "tags": {"doc": "Map where additional column properties of ag-grid can be set"}},
 			"showAs": { "type": "string", "values": [{"text":null}, {"html":"html"}, {"sanitizedHtml":"sanitizedHtml"}] }
 		},
 		"groupedColumn" : {
-            "dataprovider": { "type": "dataprovider", "forFoundset": "foundset", "resolveValuelist": true },
+            "dataprovider": { "type": "dataprovider", "forFoundset": "foundset", "resolveValuelist": true, "pushToServer" : "allow"},
             "format" : { "type": "format",  "for": [ "valuelist", "dataprovider" ]},
 			"valuelist": { "type": "valuelist", "for": "dataprovider", "forFoundset": "foundset" },
 			"id": {"type" : "string"},
