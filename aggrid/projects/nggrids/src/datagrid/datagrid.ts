@@ -484,8 +484,9 @@ export class DataGrid extends NGGridDirective {
 						if (element && element.clientWidth > 0 && element.clientHeight > 0) {
 							this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.GRID_READY);
 							this.scrollToSelectionEx();
-							if (this.onReady) {
-								this.onReady(jsEvent);
+							const onReady = this.onReady();
+							if (onReady) {
+								onReady(jsEvent);
 							}
 						}
 					}, 150);
