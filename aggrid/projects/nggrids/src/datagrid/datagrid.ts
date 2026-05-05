@@ -177,7 +177,7 @@ export class DataGrid extends NGGridDirective {
 	readonly onCellEditingStopped = input<(foundsetindex: number, columnindex: number, oldvalue: unknown, newvalue: unknown, event: Event, record: unknown) => void>(undefined);
 	readonly onColumnStateChanged = input<(columnState: string, event: Event) => void>(undefined);
 	readonly onFooterClick = input<(columnindex: number, event: Event, dataTarget: string) => void>(undefined);
-	readonly onReady = input<() => void>(undefined);
+	readonly onReady = input<(event?: Event) => void>(undefined);
 	readonly onElementDataChange = input<() => void>(undefined);
 	readonly onRowGroupOpened = input<(groupcolumnindexes: number[], groupkeys: unknown[], isopened: boolean) => void>(undefined);
 	readonly onSelectedRowsChanged = input<(isgroupselection?: boolean, groupcolumnid?: string, groupkey?: unknown, groupselection?: boolean, event?: Event) => void>(undefined);
@@ -441,6 +441,7 @@ export class DataGrid extends NGGridDirective {
 			rowGroupPanelShow: 'onlyWhenGrouping', // TODO expose property,
 			onGridReady: (event) => {
 				this.log.debug('gridReady');
+				const jsEvent = this.createJSEvent();
 				this.isGridReady = true;
 				if (this.isRendered) {
 					const emptyValue = '_empty';
@@ -479,11 +480,13 @@ export class DataGrid extends NGGridDirective {
 				} else {
 					// without timeout the column don't fit automatically
 					this.setTimeout(() => {
-						this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.GRID_READY);
-						this.scrollToSelectionEx();
-						const onReady = this.onReady();
-						if (onReady) {
-							onReady();
+						const element = this.agGridElementRef().nativeElement;
+						if (element && element.clientWidth > 0 && element.clientHeight > 0) {
+							this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.GRID_READY);
+							this.scrollToSelectionEx();
+							if (this.onReady) {
+								this.onReady(jsEvent);
+							}
 						}
 					}, 150);
 				}
@@ -562,9 +565,12 @@ export class DataGrid extends NGGridDirective {
 			getRowId: (param: GetRowIdParams) => param.data._svyFoundsetUUID + '_' + param.data._svyFoundsetIndex,
 			onGridSizeChanged: () => {
 				this.setTimeout(() => {
-					// if not yet destroyed
-					if (this.agGrid().gridOptions.onGridSizeChanged) {
-						this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.GRID_SIZE_CHANGED);
+					const element = this.agGridElementRef().nativeElement;
+					if (element && element.clientWidth > 0 && element.clientHeight > 0) {
+						// if not yet destroyed
+						if (this.agGrid().gridOptions.onGridSizeChanged) {
+							this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.GRID_SIZE_CHANGED);
+						}
 					}
 				}, 150);
 			},
@@ -715,8 +721,11 @@ export class DataGrid extends NGGridDirective {
 						}
 						this.updateColumnDefs();
 					}
-					this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.DISPLAYED_COLUMNS_CHANGED);
-					this.storeColumnsState(e.source === 'api');
+					const element = this.agGridElementRef().nativeElement;
+					if (element && element.clientWidth > 0 && element.clientHeight > 0) {
+						this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.DISPLAYED_COLUMNS_CHANGED);
+						this.storeColumnsState(e.source === 'api');
+					}
 				}
 			},
 			getContextMenuItems: () => this.contextMenuItems,

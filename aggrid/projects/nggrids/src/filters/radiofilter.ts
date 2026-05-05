@@ -9,7 +9,7 @@ import { FilterDirective } from './filter';
           <div class="ag-filter-body" #element>
             @for (item of valuelistValues; track item) {
               <label class="ag-radio-filter" id="filterRadio">
-                <input type="radio" name="{{ getName() }}" [value]="getFormatedDisplayValue(item.displayValue)" (change)="valueChanged()"/>
+                <input type="radio" name="{{ getName() }}" [value]="getFormatedDisplayValue(item.displayValue)" (click)="onRadioClick($event, '')"/>
                 <span>{{ getFormatedDisplayValue(item.displayValue) }}</span>
               </label>
             }
@@ -27,7 +27,7 @@ import { FilterDirective } from './filter';
           <div class="ag-filter-body" #element1>
             @for (item of valuelistValues; track item) {
               <label class="ag-radio-filter" id="filterRadio1">
-                <input type="radio" name="{{ getName('1') }}" [value]="getFormatedDisplayValue(item.displayValue)" (change)="valueChanged()"/>
+                <input type="radio" name="{{ getName('1') }}" [value]="getFormatedDisplayValue(item.displayValue)" (click)="onRadioClick($event, '1')"/>
                 <span>{{ getFormatedDisplayValue(item.displayValue) }}</span>
               </label>
             }
@@ -47,6 +47,8 @@ export class RadioFilter extends FilterDirective {
 
     checkboxStateValues: string[] = ['No', 'Yes', ''];
     checkboxState: string = '';  // Toggle between 'No' - unchecked, 'Yes' - checked, and '' - indeterminate
+    private _lastFilterValue: string | null = null;
+    private _lastSecondFilterValue: string | null = null;
 
     constructor() {
       super();
@@ -73,6 +75,8 @@ export class RadioFilter extends FilterDirective {
           }
         }
       }
+      this._lastFilterValue = null;
+      this._lastSecondFilterValue = null;
       this.model = '';
     }
 
@@ -101,6 +105,7 @@ export class RadioFilter extends FilterDirective {
           nativeRadio.children[0].checked = nativeRadio.children[0].value === value;
         }
       }
+      this._lastFilterValue = value || null;
     }
 
     getSecondFilterUIValue(): any {
@@ -119,19 +124,40 @@ export class RadioFilter extends FilterDirective {
     }
 
     useCheckboxForFloatingFilter(): boolean {
-      if(this.isFloating) {
-        if(this.params.colDef.context && this.params.colDef.context['floatingFilterRadioAsCheckbox'] === false) {
-          return false;
-        }
-        return true;
-      }
-      return false;
+      return this.isFloating && this.params.colDef.context && this.params.colDef.context['floatingFilterRadioAsCheckbox'] === true;
     }
 
     onCheckboxClick() {
       this.checkboxStateValues.indexOf(this.checkboxState);
       this.checkboxState = this.checkboxStateValues[(this.checkboxStateValues.indexOf(this.checkboxState) + 1) % this.checkboxStateValues.length];
       this.updateCheckboxUI();
+      this.valueChanged();
+    }
+
+    onRadioClick(event: any, suffix: string) {
+      const clickedValue = event.target.value;
+      const previousValue = suffix ? this._lastSecondFilterValue : this._lastFilterValue;
+      if (clickedValue === previousValue) {
+        event.target.checked = false;
+        if (suffix) {
+          for (const nativeRadio of this.element1Ref().nativeElement.children) {
+            nativeRadio.children[0].checked = false;
+          }
+          this._lastSecondFilterValue = null;
+        } else {
+          for (const nativeRadio of this.elementRef().nativeElement.children) {
+            nativeRadio.children[0].checked = false;
+          }
+          this._lastFilterValue = null;
+        }
+      } else {
+        if (suffix) {
+          this._lastSecondFilterValue = clickedValue;
+        } else {
+          this._lastFilterValue = clickedValue;
+        }
+      }
+
       this.valueChanged();
     }
 
