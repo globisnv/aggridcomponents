@@ -287,6 +287,9 @@ export class DataGrid extends NGGridDirective {
 
 	sizeHeaderAndColumnsToFitTimeout = null;
 
+	// flag to defer auto-sizing when the grid is not visible
+	needsAutoSizeOnShow = false;
+
 	// root foundset change listener remover
 	removeChangeListenerFunction: any = null;
 
@@ -570,6 +573,13 @@ export class DataGrid extends NGGridDirective {
 					if (element && element.clientWidth > 0 && element.clientHeight > 0) {
 						// if not yet destroyed
 						if (this.agGrid().gridOptions.onGridSizeChanged) {
+							if (this.needsAutoSizeOnShow) {
+								// grid just became visible, execute deferred auto-sizing
+								this.needsAutoSizeOnShow = false;
+								const skipHeader = this.agGridOptions.skipHeaderOnAutoSize === true ? true : false;
+								this.autoSizeColumns(skipHeader);
+								this.sizeHeader();
+							}
 							this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.GRID_SIZE_CHANGED);
 						}
 					}
@@ -1467,8 +1477,16 @@ export class DataGrid extends NGGridDirective {
 					// call auto-size only upon certain events
 					const autoSizeOnEvents = [GRID_EVENT_TYPES.GRID_READY, GRID_EVENT_TYPES.GRID_ROW_POST_CREATE];
 					if (eventType && autoSizeOnEvents.indexOf(eventType) > -1) {
-						const skipHeader = this.agGridOptions.skipHeaderOnAutoSize === true ? true : false;
-						this.autoSizeColumns(skipHeader);
+						// check if grid is visible before auto-sizing; when not visible, measurements are incorrect
+						const autoSizeElement = this.agGridElementRef().nativeElement;
+						if (autoSizeElement && autoSizeElement.clientWidth > 0 && autoSizeElement.clientHeight > 0) {
+							const skipHeader = this.agGridOptions.skipHeaderOnAutoSize === true ? true : false;
+							this.autoSizeColumns(skipHeader);
+						} else {
+							// grid is not visible, defer auto-sizing until it becomes visible
+							this.needsAutoSizeOnShow = true;
+							return;
+						}
 					}
 					break;
 				case 'SIZE_COLUMNS_TO_FIT':
