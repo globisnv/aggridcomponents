@@ -232,6 +232,9 @@ export class DataGrid extends NGGridDirective {
 	// set to true during data request from ag grid, from request-start until all data is loaded
 	isDataLoading = false;
 
+	lazyLoadingSelectAll = false;
+	inSelectionNotification = false;
+
 	scrollToSelectionWhenSelectionReady = false;
 
 	// set to true, if columns needs to be fit after rows are rendered - set to true when purge is called (all rows are rendered)
@@ -2387,6 +2390,34 @@ export class DataGrid extends NGGridDirective {
 					// TODO selected record is not in viewPort: how to render it ?
 				}
 			}
+
+			// [PSA-3769] Lazy loading select-all support:
+			// On selection notification, detect if all loaded nodes are covered (select-all heuristic).
+			if (this.inSelectionNotification) {
+				const selIdxSet: { [key: number]: boolean } = {};
+				for (const idx of foundsetManager.foundset.selectedRowIndexes) {
+					selIdxSet[idx] = true;
+				}
+				let loadedNodeCount = 0;
+				let allLoadedCovered = true;
+				this.agGrid().api.forEachNode((node: any) => {
+					if (!node.group) {
+						loadedNodeCount++;
+						if (node.rowIndex == null || !selIdxSet[node.rowIndex]) {
+							allLoadedCovered = false;
+						}
+					}
+				});
+				this.lazyLoadingSelectAll = allLoadedCovered && loadedNodeCount > 0 && foundsetManager.foundset.selectedRowIndexes.length > 0;
+			}
+			// In select-all mode, include all currently loaded nodes to prevent deselection when new blocks load.
+			if (this.lazyLoadingSelectAll) {
+				this.agGrid().api.forEachNode((node: any) => {
+					if (!node.group && selectedNodes.indexOf(node) === -1) {
+						selectedNodes.push(node);
+					}
+				});
+			}
 		}
 
 
@@ -4417,7 +4448,9 @@ export class DataGrid extends NGGridDirective {
 		// gridOptions.api.purgeEnterpriseCache();
 		if (changeEvent.selectedRowIndexesChanged && !this.requestSelectionPromises.length) {
 			this.log.debug(idRandom + ' - 3. Request selection changed');
+			this.inSelectionNotification = true;
 			this.selectedRowIndexesChanged();
+			this.inSelectionNotification = false;
 			this.scrollToSelection();
 		}
 
