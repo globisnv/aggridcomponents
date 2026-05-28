@@ -78,14 +78,16 @@ const COLUMN_KEYS_TO_CHECK_FOR_CHANGES = [
 ];
 
 const COLUMN_KEYS_TO_SKIP_IN_CHANGES = [
-	'dataprovider',
-	'valuelist',
-	'styleClassDataprovider',
-	'isEditableDataprovider',
-	'tooltip',
-	'state',
-	'rowDragDataprovider',
-	'rowDragText'
+    'dataprovider',
+    'valuelist',
+    'styleClassDataprovider',
+    'isEditableDataprovider',
+    'tooltip',
+    'state',
+    'rowDragDataprovider',
+    'rowDragText',
+    'visible',
+    'width'
 ];
 
 @Component({
@@ -172,11 +174,13 @@ export class DataGrid extends NGGridDirective {
 	readonly _internalFunctionCalls = input<Array<FunctionCall>>(undefined);
 	readonly _internalHasDoubleClickHandler = input<boolean>(undefined);
 
+	readonly onCellFocusGained = input<(foundsetindex: number,columnindex: number,record: unknown,event: Event) => void>(undefined);
 	readonly onColumnDataChange = input<(foundsetindex: number, columnindex: number, oldvalue: unknown, newvalue: unknown, event: Event, record: unknown) => void>(undefined);
 	readonly onCellEditingStarted = input<(foundsetindex: number, columnindex: number, value: unknown, event: Event, record: unknown) => void>(undefined);
 	readonly onCellEditingStopped = input<(foundsetindex: number, columnindex: number, oldvalue: unknown, newvalue: unknown, event: Event, record: unknown) => void>(undefined);
 	readonly onColumnStateChanged = input<(columnState: string, event: Event) => void>(undefined);
 	readonly onFooterClick = input<(columnindex: number, event: Event, dataTarget: string) => void>(undefined);
+	readonly onHeaderClick = input<(columnindex: number, event: Event) => void>(undefined);
 	readonly onReady = input<(event?: Event) => void>(undefined);
 	readonly onElementDataChange = input<() => void>(undefined);
 	readonly onRowGroupOpened = input<(groupcolumnindexes: number[], groupkeys: unknown[], isopened: boolean) => void>(undefined);
@@ -384,6 +388,15 @@ export class DataGrid extends NGGridDirective {
 		const columnDefs = this.getColumnDefs();
 		let maxBlocksInCache = CACHED_CHUNK_BLOCKS;
 
+		// If any column declares `headerCheckbox: true`, force-disable column
+		// virtualisation. The header checkbox is rendered through ag-Grid's
+		// custom header template; if the column is virtualised out of the
+		// horizontal viewport the input element is never created in the DOM
+		// and `setupHeaderCheckbox` cannot find it. Disabling virtualisation
+		// only when a header checkbox is configured keeps the perf impact
+		// scoped to grids that actually need it.
+		const hasHeaderCheckboxColumn = this.hasHeaderCheckboxColumn();
+
 		// if row autoHeight, we need to do a refresh after first time data are displayed, to allow ag grid to re-calculate the heights
 		// if there is 'autoHeight' = true in any column, infinite cache needs to be disabled (ag grid lib requirement)
 		for (const columnDef of columnDefs) {
@@ -490,6 +503,9 @@ export class DataGrid extends NGGridDirective {
 						if (element && element.clientWidth > 0 && element.clientHeight > 0) {
 							this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.GRID_READY);
 							this.scrollToSelectionEx();
+							if (!this.isTableGrouped()) {
+								this.setupHeaderCheckbox(true);
+							}
 							const onReady = this.onReady();
 							if (onReady) {
 								onReady(jsEvent);
@@ -555,7 +571,7 @@ export class DataGrid extends NGGridDirective {
 			groupDisplayType: this.groupUseEntireRow() ? 'groupRows' : 'multipleColumns',
 			suppressAggFuncInHeader: true, // TODO support aggregations
 
-			suppressColumnVirtualisation: false,
+			suppressColumnVirtualisation: hasHeaderCheckboxColumn,
 			suppressScrollOnNewData: true,
 
 			pivotMode: false,
@@ -739,6 +755,9 @@ export class DataGrid extends NGGridDirective {
 					if (element && element.clientWidth > 0 && element.clientHeight > 0) {
 						this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.DISPLAYED_COLUMNS_CHANGED);
 						this.storeColumnsState(e.source === 'api');
+						if (!this.isTableGrouped()) {
+							this.setupHeaderCheckbox(true);
+						}
 					}
 				}
 			},
@@ -918,9 +937,6 @@ export class DataGrid extends NGGridDirective {
 
 	ngAfterViewInit() {
 		super.ngAfterViewInit();
-		if (!this.isTableGrouped()) {
-			this.setupHeaderCheckbox(true);
-		}
 		this.setupHeaderIconStyleClass();
 	}
 
@@ -957,6 +973,21 @@ export class DataGrid extends NGGridDirective {
 		return null;
 	}
 
+	/**
+	 * Returns true if any configured column has `headerCheckbox: true`.
+	 * Used to decide whether to disable column virtualisation so the
+	 * checkbox input is always materialised in the DOM, regardless of
+	 * horizontal scroll position.
+	 */
+	private hasHeaderCheckboxColumn(): boolean {
+		const columns = this.columns();
+		if (!columns) return false;
+		for (let i = 0; i < columns.length; i++) {
+			if (columns[i].headerCheckbox) return true;
+		}
+		return false;
+	}
+
 	private setupHeaderCheckbox(addClickListener?: boolean): void {
 		const columns = this.columns();
 		if (columns) {
@@ -979,11 +1010,12 @@ export class DataGrid extends NGGridDirective {
 							}
 						}
 						ch['checked'] = isChecked;
-						if (addClickListener) {
+						if (addClickListener && !ch['_svyHeaderCheckWired']) {
 							ch.addEventListener('click', (event: Event) => {
 								this.onHeaderCheckClick(colId, event);
 								event.stopPropagation();
 							});
+							ch['_svyHeaderCheckWired'] = true;
 						}
 					};
 				}
@@ -1114,6 +1146,9 @@ export class DataGrid extends NGGridDirective {
 		this.agGrid().api.addEventListener('cellContextMenu', (params: any) => {
 			this.onCellContextMenu(params);
 		});
+        this.agGrid().api.addEventListener('cellFocused', (params: any) => {
+         this.onCellFocusedHandler(params);
+        });
 
 		// // listen to group changes
 		this.agGrid().api.addEventListener('columnRowGroupChanged', (params: any) => {
@@ -1126,6 +1161,15 @@ export class DataGrid extends NGGridDirective {
 		// listen to group collapsed
 		this.agGrid().api.addEventListener('rowGroupOpened', (params: any) => {
 			this.onRowGroupOpenedHandler(params);
+		});
+
+		// listen to header clicks on non-sortable columns
+		this.agGrid().api.addEventListener('columnHeaderClicked', (params: any) => {
+			const onHeaderClick = this.onHeaderClick();
+			if (onHeaderClick && params.column && !params.column.isSortable()) {
+				const columnIndex = this.getColumnIndex(params.column.getId());
+				onHeaderClick(columnIndex, this.createJSEvent());
+			}
 		});
 	}
 
@@ -1552,6 +1596,9 @@ export class DataGrid extends NGGridDirective {
 	initRootFoundset() {
 
 		this.foundset = new FoundsetManager(this, this.myFoundset(), 'root', true);
+		if (this.onSort()) {
+			this.applySortModel(this.getSortModel());
+		}
 		const foundsetServer = new FoundsetServer(this, []);
 		const datasource = new FoundsetDatasource(this, foundsetServer);
 		if (this.myFoundset()) {
@@ -1846,8 +1893,7 @@ export class DataGrid extends NGGridDirective {
 			}
 
 			if (column.headerCheckbox) {
-				// Store headerCheckbox template to be applied to selection column
-				this._headerCheckboxColumnParams.set({
+				const headerCheckboxTemplate = {
 					template:
 						'<div class="ag-cell-label-container" role="presentation">' +
 						'   <span data-ref="eMenu" class="ag-header-icon ag-header-cell-menu-button" aria-hidden="true"></span>' +
@@ -1861,7 +1907,15 @@ export class DataGrid extends NGGridDirective {
 						'       <ag-sort-indicator data-ref="eSortIndicator"></ag-sort-indicator>' +
 						'   </div>' +
 						'</div>'
-				});
+				};
+				if (this._checkboxSelection()) {
+					// Row checkbox selection column is rendered: route the template
+					// to the selection column so the header checkbox aligns with it.
+					this._headerCheckboxColumnParams.set(headerCheckboxTemplate);
+				} else {
+					// No selection column: render the checkbox directly in this column's header.
+					colDef.headerComponentParams = headerCheckboxTemplate;
+				}
 			}
 
 			if (column.footerText) {
@@ -3948,6 +4002,17 @@ export class DataGrid extends NGGridDirective {
 			}
 		}
 	}
+
+    onCellFocusedHandler(params: any) {
+		const onCellFocusGained = this.onCellFocusGained();
+        if (onCellFocusGained && params && params.rowIndex !== null && params.rowIndex !== undefined && params.column) {
+            const foundsetIndex = this.isTableGrouped() ? -1 : params.rowIndex + 1;
+            const columnIndex = this.getColumnIndex(params.column.colId);
+            const rowNode = this.agGrid().api.getDisplayedRowAtIndex(params.rowIndex);
+            const record = rowNode ? this.getRecord(rowNode) : null;
+            onCellFocusGained(foundsetIndex, columnIndex, record, params.event || this.createJSEvent());
+        }
+    }
 
 	onCellClicked(params: any, jsEvent: JSEvent, timeout?: number) {
 		this.log.debug(params);

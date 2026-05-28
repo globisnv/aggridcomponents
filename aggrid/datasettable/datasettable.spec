@@ -149,6 +149,25 @@
 				"optional": true				
 			}]
 		},
+		"onCellFocusGained": {
+			"doc": "Called when a cell gains focus",
+			"parameters": [{
+				"name": "rowData",
+				"type": "object"
+			}, {
+				"name": "columnId",
+				"type": "string",
+				"optional": true
+			}, {
+				"name": "cellData",
+				"type": "object",
+				"optional": true
+			}, {
+				"name": "event",
+				"type": "JSEvent",
+				"optional": true
+			}]
+		},
 		"onColumnStateChanged": {
 			"doc": "Called when the columns state is changed",
 			"parameters": [
@@ -297,6 +316,18 @@
 				"name":"dataTarget",
 				"type":"string",
 				"optional": true				
+			}]
+		},
+		"onHeaderClick": {
+			"doc": "Called when the mouse is clicked on a column header that is not sortable",
+			"parameters": [{
+				"name": "columnindex",
+				"type": "int",
+				"optional": true
+			}, {
+				"name": "event",
+				"type": "JSEvent",
+				"optional": true
 			}]
 		},
 		"onCustomMainMenuAction" : {

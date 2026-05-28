@@ -124,6 +124,7 @@ export class PowerGrid extends NGGridDirective {
     readonly _internalResetLazyLoading = input<any>(undefined);
     readonly _internalResetLazyLoadingChange = output<any>();
 
+    readonly onCellFocusGained = input<any>(undefined);
     readonly onCellClick = input<any>(undefined);
     readonly onCellDoubleClick = input<any>(undefined);
     readonly onCellRightClick = input<any>(undefined);
@@ -135,6 +136,7 @@ export class PowerGrid extends NGGridDirective {
     readonly onReady = input<any>(undefined);
     readonly onColumnStateChanged = input<any>(undefined);
     readonly onFooterClick = input<any>(undefined);
+    readonly onHeaderClick = input<(columnindex: number, event: Event) => void>(undefined);
     readonly _internalAggCustomFuncs = input<AggFuncInfo[]>(undefined);
     
     _columnState = signal<any>(undefined);
@@ -707,6 +709,7 @@ export class PowerGrid extends NGGridDirective {
         this.agGrid().api.addEventListener('cellClicked', (params: any) => this.cellClickHandler(params));
         this.agGrid().api.addEventListener('cellDoubleClicked', (params: any) => this.onCellDoubleClicked(params));
         this.agGrid().api.addEventListener('cellContextMenu', (params: any) => this.onCellContextMenu(params));
+        this.agGrid().api.addEventListener('cellFocused', (params: any) => this.onCellFocusedHandler(params));
         this.agGrid().api.addEventListener('displayedColumnsChanged', () => this.svySizeColumnsToFit(GRID_EVENT_TYPES.DISPLAYED_COLUMNS_CHANGED));
 
         // listen to group changes
@@ -715,6 +718,14 @@ export class PowerGrid extends NGGridDirective {
         // listen to group collapsed
         this.agGrid().api.addEventListener('rowGroupOpened', (event: any) => this.onRowGroupOpenedHandler(event));
 
+        // listen to header clicks on non-sortable columns
+        this.agGrid().api.addEventListener('columnHeaderClicked', (params: any) => {
+            const onHeaderClick = this.onHeaderClick();
+            if (onHeaderClick && params.column && !params.column.isSortable()) {
+                const columnIndex = this.getColumnIndex(params.column.getId());
+                onHeaderClick(columnIndex, this.createJSEvent());
+            }
+        });
 
         if (!this.servoyApi.isInDesigner() && this.useLazyLoading()) {
             this.lazyLoadingRemoteDatasource = new RemoteDatasource(this);
@@ -760,7 +771,12 @@ export class PowerGrid extends NGGridDirective {
                         break;
                     case 'columns':
                         if (!this.isColumnsFirstChange) {
-                            if (!isEqualWith(change.currentValue, change.previousValue) ||
+                            if (!isEqualWith(change.currentValue, change.previousValue, (objValue: any, othValue: any, key: any) => {
+                                if (key === 'visible' || key === 'width') {
+                                    return true;
+                                }
+                                return undefined;
+                            }) ||
                                 (change.currentValue && this.previousColumns && change.currentValue.length !== this.previousColumns.length)) {
                                 this.updateColumnDefs();
                             } else {
@@ -1527,6 +1543,18 @@ export class PowerGrid extends NGGridDirective {
         if (onRowSelected && node && node.data) {
             // var selectIndex = node.rowIndex + 1; Selected index doesn't make sense for a dataset since the grid may change the dataset internally
             onRowSelected(node.data, node.selected, this.createJSEvent());
+        }
+    }
+
+    onCellFocusedHandler(params: any) {
+        const onCellFocusGained = this.onCellFocusGained();
+        if (onCellFocusGained && params && params.rowIndex !== null && params.rowIndex !== undefined && params.column) {
+            const rowNode = this.agGrid().api.getDisplayedRowAtIndex(params.rowIndex);
+            const rowData = rowNode && (rowNode.data || (rowNode.groupData && Object.assign(rowNode.groupData, rowNode.aggData)));
+            if (rowData) {
+                const colId = params.column?.colDef?.colId !== undefined ? params.column.colDef.colId : params.column?.colDef?.field;
+                onCellFocusGained(rowData, colId, params.value, params.event || this.createJSEvent());
+            }
         }
     }
 

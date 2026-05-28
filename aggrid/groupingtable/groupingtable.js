@@ -1010,12 +1010,30 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 					gridOptions.api.addEventListener('cellClicked', cellClickHandler);
 					gridOptions.api.addEventListener('cellDoubleClicked', onCellDoubleClicked);
 					gridOptions.api.addEventListener('cellContextMenu', onCellContextMenu);
+					gridOptions.api.addEventListener('cellFocused', onCellFocused);
 
 					// listen to group changes
 					gridOptions.api.addEventListener('columnRowGroupChanged', onColumnRowGroupChanged);
 
 					// listen to group collapsed
 					gridOptions.api.addEventListener('rowGroupOpened', onRowGroupOpened);
+
+					// listen to header clicks on non-sortable columns
+					gridDiv.addEventListener('click', function(e) {
+						if ($scope.handlers.onHeaderClick) {
+							var headerCell = e.target.closest('.ag-header-cell');
+							if (headerCell) {
+								var colId = headerCell.getAttribute('col-id');
+								if (colId) {
+									var col = gridOptions.columnApi.getColumn(colId);
+									if (col && col.getColDef().sortable === false) {
+										var columnIndex = getColumnIndex(colId);
+										$scope.handlers.onHeaderClick(columnIndex, createJSEvent());
+									}
+								}
+							}
+						}
+					});
 
 					/**
 					 * Grid Event
@@ -1225,6 +1243,14 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 					 *
 					 * @private
 					 * */
+					function onCellFocused(params) {
+						if ($scope.handlers.onCellFocusGained && params && params.rowIndex !== null && params.rowIndex !== undefined && params.column) {
+							var rowNode = gridOptions.api.getDisplayedRowAtIndex(params.rowIndex);
+							var foundsetIndex = isTableGrouped() ? -1 : params.rowIndex + 1;
+							$scope.handlers.onCellFocusGained(foundsetIndex, getColumnIndex(params.column.colId), getRecord(rowNode), params.event || createJSEvent());
+						}
+					}
+
 					function onCellClicked(params) {
 						$log.debug(params);
 						var col = params.colDef.field ? getColumn(params.colDef.field) : null;
@@ -1240,36 +1266,8 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 								params.node.setDataValue(params.column.colId, getCheckboxEditorToggleValue(checkValue));
 							}
 						}
-						if ($scope.handlers.onCellClick) {
-							//						var row = params.data;
-							//						var foundsetManager = getFoundsetManagerByFoundsetUUID(row._svyFoundsetUUID);
-							//						if (!foundsetManager) foundsetManager = foundset;
-							//						var foundsetRef = foundsetManager.foundset;
-							//
-							//						var foundsetIndex;
-							//						if (isTableGrouped()) {
-							//							// TODO search for grouped record in grouped foundset (may not work because of caching issues);
-							//							$log.warn('select grouped record not supported yet');
-							//							foundsetIndex = foundsetManager.getRowIndex(row);
-							//						} else {
-							//							foundsetIndex = params.node.rowIndex;
-							//						}
-							//
-							//						var columnIndex = getColumnIndex(params.colDef.field);
-							//						var record;
-							//						if (foundsetIndex > -1) {
-							//							// FIXME cannot resolve the record when grouped, how can i rebuild the record ?
-							//							// Can i pass in the array ok pks ? do i know the pks ?
-							//							// Can i get the hasmap of columns to get the proper dataProviderID name ?
-							//							record = foundsetRef.viewPort.rows[foundsetIndex - foundsetRef.viewPort.startIndex];
-							//						}
-							//						// no foundset index if record is grouped
-							//						if (foundsetManager.isRoot === false) {
-							//							foundsetIndex = -1;
-							//						}
-
-							$scope.handlers.onCellClick(getFoundsetIndexFromEvent(params), getColumnIndex(params.column.colId), getRecord(params), params.event);
-						}
+					$scope.svyServoyapi.callServerSideApi('cellClick',
+						['click', getFoundsetIndexFromEvent(params), getColumnIndex(params.column.colId), getRecord(params), params.event, null]);
 					}
 
 					/**
@@ -1435,40 +1433,13 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 							}, 250);
 						}
 					}
-					function onCellDoubleClickedEx(params) {
-						$log.debug(params);
-						if ($scope.handlers.onCellDoubleClick && !params.node.rowPinned) {
-							//						var row = params.data;
-							//						var foundsetManager = getFoundsetManagerByFoundsetUUID(row._svyFoundsetUUID);
-							//						if (!foundsetManager) foundsetManager = foundset;
-							//						var foundsetRef = foundsetManager.foundset;
-							//						var foundsetIndex;
-							//						if (isTableGrouped()) {
-							//							// TODO search for grouped record in grouped foundset (may not work because of caching issues);
-							//							$log.warn('select grouped record not supported yet');
-							//							foundsetIndex = foundsetManager.getRowIndex(row);
-							//						} else {
-							//							foundsetIndex = params.node.rowIndex;
-							//						}
-							//
-							//						var columnIndex = getColumnIndex(params.colDef.field);
-							//						var record;
-							//						if (foundsetIndex > -1) {
-							//							// FIXME cannot resolve the record when grouped, how can i rebuild the record ?
-							//							// Can i pass in the array ok pks ? do i know the pks ?
-							//							// Can i get the hasmap of columns to get the proper dataProviderID name ?
-							//							record = foundsetRef.viewPort.rows[foundsetIndex - foundsetRef.viewPort.startIndex];
-							//						}
-							//
-							//						// no foundset index if record is grouped
-							//						if (foundsetManager.isRoot === false) {
-							//							foundsetIndex = -1;
-							//						}
-							//						$scope.handlers.onCellDoubleClick(foundsetIndex, columnIndex, record, params.event);
-
-							$scope.handlers.onCellDoubleClick(getFoundsetIndexFromEvent(params), getColumnIndex(params.column.colId), getRecord(params), params.event);
-						}
+				function onCellDoubleClickedEx(params) {
+					$log.debug(params);
+					if (!params.node.rowPinned) {
+						$scope.svyServoyapi.callServerSideApi('cellClick',
+							['doubleClick', getFoundsetIndexFromEvent(params), getColumnIndex(params.column.colId), getRecord(params), params.event, null]);
 					}
+				}
 
 					/**
 					 * On Right Click event
@@ -1482,12 +1453,11 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 								selectionEvent = { type: 'click', event: params.event, rowIndex: params.node.rowIndex };
 								params.node.setSelected(true, true);
 							}
-							if ($scope.handlers.onCellRightClick) {	
-								// Added setTimeOut to enable onColumnDataChangeEvent to go first; must be over 250, so selection is sent first
-								setTimeout(function() {
-									$scope.handlers.onCellRightClick(getFoundsetIndexFromEvent(params), getColumnIndex(params.column.colId), getRecord(params), params.event);
-								}, 350);
-							}
+						// Added setTimeOut to enable onColumnDataChangeEvent to go first; must be over 250, so selection is sent first
+						setTimeout(function() {
+							$scope.svyServoyapi.callServerSideApi('cellClick',
+								['rightClick', getFoundsetIndexFromEvent(params), getColumnIndex(params.column.colId), getRecord(params), params.event, null]);
+						}, 350);
 						}
 					}
 					
@@ -2717,6 +2687,10 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 
 						SelectEditor.prototype.afterGuiAttached = function () {
 							this.eSelect.focus();
+							try {
+								this.eSelect.showPicker();
+							} catch(e) {
+							}
 						};
 
 						SelectEditor.prototype.getValue = function () {
@@ -3878,27 +3852,31 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 							var n = [];
 							if(columnsArray1) {
 								for(var i = 0; i < columnsArray1.length; i++) {
-									var ob = Object.assign({}, columnsArray1[i]);
-									// skip entries with data
-									delete ob['dataprovider']; 
-									delete ob['valuelist'];
-									delete ob['styleClassDataprovider'];
-									delete ob['isEditableDataprovider'];
-									delete ob['tooltip'];
-									n.push(ob);
+								var ob = Object.assign({}, columnsArray1[i]);
+								// skip entries with data
+								delete ob['dataprovider']; 
+								delete ob['valuelist'];
+								delete ob['styleClassDataprovider'];
+								delete ob['isEditableDataprovider'];
+								delete ob['tooltip'];
+								delete ob['visible'];
+								delete ob['width'];
+								n.push(ob);
 								}
 							}
 							var o = [];
 							if(collumnsArray2) {
 								for(var i = 0; i < collumnsArray2.length; i++) {
-									var ob = Object.assign({}, collumnsArray2[i]);
-									// skip entries with data
-									delete ob['dataprovider']; 
-									delete ob['valuelist'];
-									delete ob['styleClassDataprovider'];
-									delete ob['isEditableDataprovider'];
-									delete ob['tooltip'];
-									o.push(ob);
+								var ob = Object.assign({}, collumnsArray2[i]);
+								// skip entries with data
+								delete ob['dataprovider']; 
+								delete ob['valuelist'];
+								delete ob['styleClassDataprovider'];
+								delete ob['isEditableDataprovider'];
+								delete ob['tooltip'];
+								delete ob['visible'];
+								delete ob['width'];
+								o.push(ob);
 								}
 							}
 							var nS = JSON.stringify(n);
