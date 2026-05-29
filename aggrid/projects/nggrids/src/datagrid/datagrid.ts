@@ -905,6 +905,15 @@ export class DataGrid extends NGGridDirective {
 			}
 		}
 
+		// groupDefaultExpanded is clientSide-only in AG Grid; translate it to the
+		// serverSide equivalent so it keeps working on this serverSide row model grid
+		if (typeof this.agGridOptions['groupDefaultExpanded'] === 'number') {
+			const groupDefaultExpanded = this.agGridOptions['groupDefaultExpanded'];
+			delete this.agGridOptions['groupDefaultExpanded'];
+			this.agGridOptions['isServerSideGroupOpenByDefault'] =
+				(params: any) => groupDefaultExpanded === -1 || params.rowNode.level < groupDefaultExpanded;
+		}
+
 		if (this.agGridOptions.singleClickEdit) {
 			this.isSingleClickEdit = true;
 		}
