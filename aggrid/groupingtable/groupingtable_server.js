@@ -127,6 +127,9 @@ $scope.getGroupedFoundsetUUID = function(
 			query.result.add(query.aggregates.count(), "svycount"); 
 		}
 
+		// Apply header filters to the count query so svycount reflects filtered data
+		if (sFilterModel) applyFilterModelToQuery(query, sFilterModel);
+
 		childFoundset = servoyApi.getViewFoundSet("", query);
 	} else { // is not a new group, will be a leaf !
 
@@ -444,6 +447,33 @@ function log(msg, level) {
 			console.log(msg);
 		}
 		break;
+	}
+}
+
+function applyFilterModelToQuery(query, sFilterModel) {
+	if (!sFilterModel || sFilterModel == '{}') return;
+	var filterModel = JSON.parse(sFilterModel);
+	if ($scope.model.columns) {
+		for (var i = 0; i < $scope.model.columns.length; i++) {
+			var filter = filterModel[i];
+			if (!filter) continue;
+			var dp = $scope.model.columns[i].dataprovider;
+			var whereClauseForDP = null;
+			if (filter['operator']) {
+				if (filter['conditions'] && filter['conditions'].length > 1) {
+					var wc1 = getFilterWhereClauseForDataprovider(query, filter['conditions'][0], dp, $scope.model.columns[i].format);
+					var wc2 = getFilterWhereClauseForDataprovider(query, filter['conditions'][1], dp, $scope.model.columns[i].format);
+					if (wc1 && wc2) {
+						whereClauseForDP = filter['operator'] == 'AND'
+							? query.and.add(wc1).add(wc2)
+							: query.or.add(wc1).add(wc2);
+					}
+				}
+			} else {
+				whereClauseForDP = getFilterWhereClauseForDataprovider(query, filter, dp, $scope.model.columns[i].format);
+			}
+			if (whereClauseForDP) query.where.add(whereClauseForDP);
+		}
 	}
 }
 
