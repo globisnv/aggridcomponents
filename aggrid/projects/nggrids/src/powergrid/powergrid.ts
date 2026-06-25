@@ -171,6 +171,9 @@ export class PowerGrid extends NGGridDirective {
 
     sizeColumnsToFitTimeout = null;
 
+    // flag to defer auto-sizing when the grid is not visible (zero size); applied once it becomes visible
+    needsAutoSizeOnShow = false;
+
 
     isColumnsFirstChange = true;
     previousColumns: any[];
@@ -202,7 +205,10 @@ export class PowerGrid extends NGGridDirective {
             this.agContinuousColumnsAutoSizing = this.registrationService.powergridService.continuousColumnsAutoSizing;
         }
 
-        this.initialColumnsAutoSizing = this._columnsAutoSizing();
+        // read the input directly: the _columnsAutoSizing signal is only set in svyOnInit (which
+        // runs after ngOnInit), so reading the signal here would leave initialColumnsAutoSizing
+        // undefined and collapse svySizeColumnsToFit into the default sizeColumnsToFit branch
+        this.initialColumnsAutoSizing = this.columnsAutoSizing();
 
         toolPanelConfig = this.mergeConfig(toolPanelConfig, this.toolPanelConfig());
         iconConfig = this.mergeConfig(iconConfig, this.iconConfig());
@@ -369,6 +375,14 @@ export class PowerGrid extends NGGridDirective {
                 this.setTimeout(() => {
                     // if not yet destroyed
                     if (this.agGrid().gridOptions.onGridSizeChanged) {
+                        const element = this.agGridElementRef().nativeElement;
+                        if (this.needsAutoSizeOnShow && element && element.clientWidth > 0 && element.clientHeight > 0) {
+                            // grid just became visible, execute the auto-sizing that was deferred at GRID_READY
+                            this.needsAutoSizeOnShow = false;
+                            const skipHeader = this.agGridOptions.skipHeaderOnAutoSize === true ? true : false;
+                            this.autoSizeColumns(skipHeader);
+                            this.sizeHeader();
+                        }
                         this.svySizeColumnsToFit(GRID_EVENT_TYPES.GRID_SIZE_CHANGED);
                     }
                 }, 150);
@@ -1399,8 +1413,17 @@ export class PowerGrid extends NGGridDirective {
                 // call auto-size only upon certain events
                 const autoSizeOnEvents = [GRID_EVENT_TYPES.GRID_READY];
                 if (eventType && autoSizeOnEvents.indexOf(eventType) > -1) {
-                    const skipHeader = this.agGridOptions.skipHeaderOnAutoSize === true ? true : false;
-                    this.autoSizeColumns(skipHeader);
+                    // check if grid is visible before auto-sizing; when not visible, measurements are
+                    // incorrect (columns collapse to their minimum width)
+                    const autoSizeElement = this.agGridElementRef().nativeElement;
+                    if (autoSizeElement && autoSizeElement.clientWidth > 0 && autoSizeElement.clientHeight > 0) {
+                        const skipHeader = this.agGridOptions.skipHeaderOnAutoSize === true ? true : false;
+                        this.autoSizeColumns(skipHeader);
+                    } else {
+                        // grid is not visible, defer auto-sizing until it becomes visible (onGridSizeChanged)
+                        this.needsAutoSizeOnShow = true;
+                        return;
+                    }
                 }
                 break;
             case 'SIZE_COLUMNS_TO_FIT':
