@@ -526,6 +526,12 @@ export class DataGrid extends NGGridDirective {
 					if (this.agMoveToNextEditableCellOnTab === false && params.editing && params.event.keyCode === 9) {
 						this.agGrid().api.stopEditing();
 					}
+					// Suppress Space key to prevent ag-Grid's default handling (row selection toggle + scroll).
+					// Our onCellKeyDown handler manages Space interactions (checkbox toggle, cellClick, multiselect toggle).
+					if (!params.editing && params.event.keyCode === 32) {
+						params.event.preventDefault(); // prevent browser scroll
+						return true;
+					}
 					return false;
 				}
 			},
@@ -787,6 +793,7 @@ export class DataGrid extends NGGridDirective {
 							}
 						}
 						break;
+					case 32: // SPACE
 					case 13: // ENTER
 						// Don't trigger cellClickHandler if in edit mode or find mode
 						const currentEditCells = this.agGrid().api.getEditingCells();
@@ -797,6 +804,16 @@ export class DataGrid extends NGGridDirective {
 								clickTarget = clickTarget.parentNode;
 							}
 							if (clickTarget === agGridElementRef.nativeElement) {
+								if (param.event.keyCode === 32) {
+									param.event.preventDefault(); // prevent browser scroll on Space
+									// In multiselect mode, toggle row selection for non-checkbox cells
+									const col = param.colDef.field ? this.getColumn(param.colDef.field) : null;
+									const myFoundset = this.myFoundset();
+									if ((!col || col.editType !== 'CHECKBOX') && myFoundset && myFoundset.multiSelect && param.node && !param.node.rowPinned) {
+										this.selectionEvent = { type: 'click', event: { ctrlKey: true, shiftKey: false }, rowIndex: param.node.rowIndex };
+										param.node.setSelected(!param.node.isSelected());
+									}
+								}
 								this.cellClickHandler(param);
 							}
 						}
@@ -902,6 +919,13 @@ export class DataGrid extends NGGridDirective {
 				if (userGridOptions.hasOwnProperty(property) && !gridOptionsSetByComponent.hasOwnProperty(property)) {
 					this.agGridOptions[property] = userGridOptions[property];
 				}
+			}
+
+			// Honor user-provided gridOptions.sideBar override so that subsequent
+			// setGridOption('sideBar', this.sideBar) calls (e.g. on `enabled` change
+			// after a form re-show) do not revert to the default sideBar.
+			if (Object.prototype.hasOwnProperty.call(userGridOptions, 'sideBar')) {
+				this.sideBar = userGridOptions.sideBar;
 			}
 		}
 
@@ -1350,6 +1374,9 @@ export class DataGrid extends NGGridDirective {
 					case 'gridOptions':
 						if (!change.firstChange) {
 							this.agGrid().api.updateGridOptions(change.currentValue);
+							if (change.currentValue && Object.prototype.hasOwnProperty.call(change.currentValue, 'sideBar')) {
+								this.sideBar = change.currentValue.sideBar;
+							}
 						}
 						break;
 				}
@@ -3079,7 +3106,7 @@ export class DataGrid extends NGGridDirective {
 		if (!_this.enabled()) return false;
 
 		const col = args.colDef.field ? _this.getColumn(args.colDef.field) : null;
-		if (col && col.editType === 'CHECKBOX' && (!args.event || args.event.target.tagName !== 'I')) {
+		if (col && col.editType === 'CHECKBOX' && (!args.event || (!(args.event instanceof KeyboardEvent) && args.event.target.tagName !== 'I'))) {
 			return false;
 		}
 
@@ -3476,9 +3503,21 @@ export class DataGrid extends NGGridDirective {
 		}
 
 		if (!suggestedNextCell) {
-			this.setTimeout(() => {
-				this.agGridElementRef().nativeElement.focus();
-			}, 0);
+			const backwards = params.backwards;
+			const sabloDirective = this.sabloTabseqDirective();
+			if (sabloDirective && sabloDirective.runtimeIndex) {
+				const nextIndex = backwards
+					? sabloDirective.runtimeIndex.startIndex - 1
+					: sabloDirective.runtimeIndex.nextAvailableIndex;
+				if (nextIndex > 0) {
+					const nextElement = this.doc.querySelector('[tabindex="' + nextIndex + '"]') as HTMLElement;
+					if (nextElement) {
+						this.setTimeout(() => {
+							nextElement.focus();
+						}, 0);
+					}
+				}
+			}
 		}
 
 		return suggestedNextCell ? suggestedNextCell : false;
@@ -5441,15 +5480,22 @@ class FoundsetDatasource implements IServerSideDatasource {
 
 		let removeAllFoundsetRefPostponed = false;
 		const _this = this;
+		const groupNodes: any[] = new Array(groupKeys.length);
+		let currentNode = params.parentNode;
+		for (let j = groupKeys.length - 1; j >= 0; j--) {
+			groupNodes[j] = currentNode;
+			currentNode = currentNode?.parent;
+		}
 		for (let i = 0; i < groupKeys.length; i++) {
 			if (groupKeys[i] == NULL_VALUE) {
 				groupKeys[i] = null;	// reset to real null, so we use the right value for grouping
 			}
 			if (groupKeys[i] !== null) {
-				if(params?.parentNode?.data['_unresolved_' + rowGroupCols[i]['field']] !== undefined) {
-					groupKeys[i] = params?.parentNode?.data['_unresolved_' + rowGroupCols[i]['field']];
+				const nodeData = groupNodes[i]?.data;
+				if(nodeData?.['_unresolved_' + rowGroupCols[i]['field']] !== undefined) {
+					groupKeys[i] = nodeData['_unresolved_' + rowGroupCols[i]['field']];
 				} else {
-					const vl = this.dataGrid.getValuelistEx(params.parentNode.data, rowGroupCols[i]['id']);
+					const vl = nodeData ? this.dataGrid.getValuelistEx(nodeData, rowGroupCols[i]['id']) : null;
 					if (vl) {
 							const filterDeferred = new Deferred();
 							filterPromises.push(filterDeferred.promise);

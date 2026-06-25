@@ -620,7 +620,16 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 							menuTabs: vMenuTabs,
 							sortable: config.enableSorting,
 							resizable: config.enableColumnResize,
-							tooltipComponent: getHtmlTooltip()
+							tooltipComponent: getHtmlTooltip(),
+							suppressKeyboardEvent: function(params) {
+								// Suppress Space key to prevent ag-Grid's default handling (row selection toggle + scroll).
+								// Our onCellKeyDown handler manages Space interactions (checkbox toggle, cellClick, multiselect toggle).
+								if (!params.editing && params.event.keyCode === 32) {
+									params.event.preventDefault(); // prevent browser scroll
+									return true;
+								}
+								return false;
+							}
 						},
 						columnDefs: columnDefs,
 						getMainMenuItems: getMainMenuItems,
@@ -830,6 +839,29 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 											}
 										}
 									}
+									break;
+								case 32: // SPACE
+								case 13: // ENTER
+									var currentEditCells = gridOptions.api.getEditingCells();
+									if (param.event.target && currentEditCells.length === 0 && !isInFindMode()) {
+										var clickTarget = param.event.target;
+										while (clickTarget && clickTarget !== $element[0]) {
+											clickTarget = clickTarget.parentNode;
+										}
+										if (clickTarget === $element[0]) {
+											if (param.event.keyCode === 32) {
+												param.event.preventDefault(); // prevent browser scroll on Space
+												// In multiselect mode, toggle row selection for non-checkbox cells
+												var col = param.colDef.field ? getColumn(param.colDef.field) : null;
+												if ((!col || col.editType !== 'CHECKBOX') && $scope.model.myFoundset && $scope.model.myFoundset.multiSelect && param.node && !param.node.rowPinned) {
+													selectionEvent = { type: 'click', event: { ctrlKey: true, shiftKey: false }, rowIndex: param.node.rowIndex };
+													param.node.setSelected(!param.node.selected);
+												}
+											}
+											cellClickHandler(param);
+										}
+									}
+									break;
 							}
 						},
 						processRowPostCreate: function(params) {
@@ -3240,15 +3272,22 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 							removeAllFoundsetRefPostponed = true;
 						}
 						var removeAllFoundsetRefPostponed = false;
+						var groupNodes = new Array(groupKeys.length);
+						var currentNode = params.parentNode;
+						for (var j = groupKeys.length - 1; j >= 0; j--) {
+							groupNodes[j] = currentNode;
+							currentNode = currentNode ? currentNode.parent : null;
+						}
 						for (var i = 0; i < groupKeys.length; i++) {
 							if (groupKeys[i] == NULL_VALUE) {
 								groupKeys[i] = null;	// reset to real null, so we use the right value for grouping
 							}
 							if (groupKeys[i] !== null) {
-								if(params?.parentNode?.data['_unresolved_' + rowGroupCols[i]['field']] !== undefined) {
-									groupKeys[i] = params?.parentNode?.data['_unresolved_' + rowGroupCols[i]['field']];
+								var nodeData = groupNodes[i] ? groupNodes[i].data : undefined;
+								if(nodeData && nodeData['_unresolved_' + rowGroupCols[i]['field']] !== undefined) {
+									groupKeys[i] = nodeData['_unresolved_' + rowGroupCols[i]['field']];
 								} else {
-									var vl = getValuelistEx(params.parentNode.data, rowGroupCols[i]['id'], false);
+									var vl = nodeData ? getValuelistEx(nodeData, rowGroupCols[i]['id'], false) : null;
 									if(vl) {
 										filterPromisesFction(vl, i);
 									}
@@ -5682,7 +5721,7 @@ var sortColumns = [];
 						if(!$scope.model.enabled) return false;
 
 						var col = args.colDef.field ? getColumn(args.colDef.field) : null;
-						if(col && col.editType === 'CHECKBOX' && (!args.event || args.event.target.tagName !== 'I')) {
+						if(col && col.editType === 'CHECKBOX' && (!args.event || (!(args.event instanceof KeyboardEvent) && args.event.target.tagName !== 'I'))) {
 							return false;
 						}
 
