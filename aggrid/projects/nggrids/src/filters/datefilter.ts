@@ -310,6 +310,69 @@ export class DateFilter extends FilterDirective {
       return null;
     }
 
+    // Day-granular client-side filtering. The inherited FilterDirective.doesFilterPass compares
+    // model.filter (which a date model doesn't have — it uses dateFrom/dateTo) and would hide every
+    // row. This compares the cell date against the model at day granularity, matching ag-grid's date
+    // filter semantics (time part ignored) and the server-side filtering. For a Power Grid that
+    // filters server-side every rendered row already matches, so all rows pass.
+    doesFilterPass(params: any): boolean {
+      return this.dateModelPasses(this.model, params && params.data ? params.data[this.params.colDef.field] : null);
+    }
+
+    private dateModelPasses(model: any, cellValue: any): boolean {
+      if (!model) return true;
+
+      // combined AND/OR (date normally suppresses it, but stay defensive)
+      if (model.operator && Array.isArray(model.conditions) && model.conditions.length) {
+        const passes = model.conditions.map((c: any) => this.dateModelPasses(c, cellValue));
+        return model.operator === 'OR' ? passes.some((p: boolean) => p) : passes.every((p: boolean) => p);
+      }
+
+      const isBlank = cellValue === null || cellValue === undefined || cellValue === '';
+      if (model.type === 'blank') return isBlank;
+      if (model.type === 'notBlank') return !isBlank;
+      if (isBlank) return false;
+
+      const cellDay = this.toDayNumber(cellValue);
+      const fromDay = this.modelDayNumber(model.dateFromMs, model.dateFrom);
+      if (cellDay === null || fromDay === null) return true;
+
+      switch (model.type) {
+        case 'equals': return cellDay === fromDay;
+        case 'notEqual': return cellDay !== fromDay;
+        case 'lessThan': return cellDay < fromDay;
+        case 'greaterThan': return cellDay > fromDay;
+        case 'inRange': {
+          const toDay = this.modelDayNumber(model.dateToMs, model.dateTo);
+          return toDay === null ? true : (cellDay >= fromDay && cellDay <= toDay);
+        }
+        default: return true;
+      }
+    }
+
+    // Local midnight (epoch ms) of a cell value (Date, ISO string, or epoch). Null when unparseable.
+    private toDayNumber(value: any): number | null {
+      const date = value instanceof Date ? value : new Date(value);
+      if (isNaN(date.getTime())) return null;
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    }
+
+    // Local midnight (epoch ms) of a model bound, preferring the epoch ms, falling back to the
+    // 'yyyy-MM-dd HH:mm:ss' string. Null when neither is present.
+    private modelDayNumber(ms: number, str: string): number | null {
+      if (ms !== undefined && ms !== null) {
+        const date = new Date(ms);
+        return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+      }
+      if (str) {
+        const parts = String(str).substring(0, 10).split('-');
+        if (parts.length === 3) {
+          return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10)).getTime();
+        }
+      }
+      return null;
+    }
+
     onClearFilter() {
       super.onClearFilter();
       this.elementToRef().nativeElement.value = '';

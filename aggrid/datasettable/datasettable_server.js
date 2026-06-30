@@ -66,6 +66,17 @@ $scope.api.restoreColumnState = function(columnState) {
 }
 
 /**
+ * Set the filter model.
+ * This api maps to ag-grid's setFilterModel; for more details on the model's structure check this page: https://www.ag-grid.com/javascript-data-grid/filter-api/
+ * To clear the filter, use an empty object ({}) as filterModel;
+ *
+ * @param {Object} filterModel
+ */
+$scope.api.setFilterModel = function(filterModel) {
+    $scope.model._internalFilterModel = filterModel;
+}
+
+/**
  * Returns all the columns
  * 
  * @return {Array<column>}
@@ -132,7 +143,11 @@ function convertData(value, columnName) {
     var convertedValue = value;
     if(convertedValue instanceof Date) {
         var column = getColumnByDataprovider(columnName);
-        if(column && column.formatType == 'DATETIME' && column.format) {
+        // column.format only carries the useLocalDateTime flag when it is the JSON form
+        // ({"displayFormat":...,"useLocalDateTime":...}). When an i18n display format is used it is
+        // resolved to a plain pattern string (e.g. "dd/MM/yyyy HH:mm"), which is not JSON — guard the
+        // parse so it doesn't throw and just leave the date as-is in that case.
+        if(column && column.formatType == 'DATETIME' && typeof column.format == 'string' && column.format.charAt(0) == '{') {
             try {
                 var formatJSON = JSON.parse(column.format);
                 if(formatJSON.useLocalDateTime) {
@@ -213,7 +228,9 @@ $scope.api.newRows = function(rowsData, appendToBeginning) {
 }
 
 /**
- * Update rows - in order to work, pks needs to be set using renderData, and the rowData objects needs to have pk
+ * Update rows - in order to work, pks needs to be set using renderData, and the rowData objects needs to have pk.
+ * Pass FULL row objects (the row data is replaced wholesale, not merged). Rows whose pk is not currently
+ * in the grid are added instead of updated, so this is a safe upsert.
  *
  * @param {Array<Object>} rowsData update rows
  */

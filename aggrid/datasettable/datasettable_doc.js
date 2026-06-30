@@ -431,6 +431,15 @@ function restoreColumnState(columnState) {
 }
 
 /**
+ * Sets the grid's column filter model. Maps to ag-grid's setFilterModel.
+ * Pass an empty object ({}) to clear all filters.
+ *
+ * @param {Object} filterModel The ag-grid filter model to apply.
+ */
+function setFilterModel(filterModel) {
+}
+
+/**
  * Returns all the columns
  * 
  * @return {Array<CustomType<aggrid-datasettable.column>>} An array of all column objects currently defined in the table.

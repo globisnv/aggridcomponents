@@ -14,6 +14,7 @@ import { SelectEditor } from '../editors/selecteditor';
 import { TypeaheadEditor } from '../editors/typeaheadeditor';
 import { ValuelistFilter } from '../filters/valuelistfilter';
 import { RadioFilter } from '../filters/radiofilter';
+import { DateFilter } from '../filters/datefilter';
 import { NgbTypeaheadConfig } from '@ng-bootstrap/ng-bootstrap';
 import { RegistrationService } from '../datagrid/commons/registration.service';
 
@@ -120,6 +121,8 @@ export class PowerGrid extends NGGridDirective {
     readonly columnStateChange = output<any>();
     readonly _internalExpandedState = input<any>(undefined);
     readonly _internalExpandedStateChange = output<any>();
+    readonly _internalFilterModel = input<unknown>(undefined);
+    readonly _internalFilterModelChange = output<unknown>();
 
     readonly _internalResetLazyLoading = input<any>(undefined);
     readonly _internalResetLazyLoadingChange = output<any>();
@@ -145,6 +148,7 @@ export class PowerGrid extends NGGridDirective {
     _checkboxSelection = signal<boolean>(undefined);
     _columnsAutoSizing = signal<string>(undefined);
     __internalExpandedState = signal<any>(undefined);
+    __internalFilterModel = signal<unknown>(undefined);
     _data = signal<any>(undefined);
     _lastRowIndex = signal<number>(undefined);
 
@@ -389,7 +393,7 @@ export class PowerGrid extends NGGridDirective {
             },
             //                onColumnEverythingChanged: storeColumnsState,	// do we need that ?, when is it actually triggered ?
             onSortChanged: () => this.storeColumnsState(),
-            //                onFilterChanged: storeColumnsState,			 disable filter sets for now
+            onFilterChanged: () => this.storeColumnsState(),
             //                onColumnVisible: storeColumnsState,			 covered by onDisplayedColumnsChanged
             //                onColumnPinned: storeColumnsState,			 covered by onDisplayedColumnsChanged
             onColumnResized: (e: ColumnResizedEvent) => {   // NOT covered by onDisplayedColumnsChanged
@@ -506,7 +510,8 @@ export class PowerGrid extends NGGridDirective {
             resetRowDataOnUpdate: true,
             components: {
                 valuelistFilter: ValuelistFilter,
-                radioFilter: RadioFilter
+                radioFilter: RadioFilter,
+                dateFilter: DateFilter
             }
         };
 
@@ -773,10 +778,29 @@ export class PowerGrid extends NGGridDirective {
                         break;
                     case 'updateData':
                         if (change.currentValue) {
-                            this.agGrid().api.applyTransaction(change.currentValue);
-                            if(change.currentValue.update) {
+                            const transaction = change.currentValue;
+                            // updateRows requires a full row. ag-grid throws if an 'update' targets a row
+                            // id that isn't present (live updates can't guarantee the row is loaded), so
+                            // re-route any missing rows to 'add' to make it a safe upsert.
+                            if (transaction.update) {
+                                const present = [];
+                                const missing = [];
+                                for (const rowData of transaction.update) {
+                                    if (this.agGrid().api.getRowNode(this.generateRowId(rowData))) {
+                                        present.push(rowData);
+                                    } else {
+                                        missing.push(rowData);
+                                    }
+                                }
+                                transaction.update = present;
+                                if (missing.length) {
+                                    transaction.add = (transaction.add || []).concat(missing);
+                                }
+                            }
+                            this.agGrid().api.applyTransaction(transaction);
+                            if (transaction.update) {
                                 const rowNodes = [];
-                                for (const rowData of change.currentValue.update) {
+                                for (const rowData of transaction.update) {
                                     const rowId = this.generateRowId(rowData);
                                     const rowNode = this.agGrid().api.getRowNode(rowId);
                                     if (rowNode) {
@@ -788,6 +812,17 @@ export class PowerGrid extends NGGridDirective {
                                 }
                             }
                             this.servoyApi.callServerSideApi('clearUpdateData', []);
+                        }
+                        break;
+                    case 'groupRowRendererFunc':
+                        // Re-apply the group row renderer at runtime (it is otherwise only wired during
+                        // initial grid-options setup), then redraw so existing group rows pick it up.
+                        if (this.isGridReady && this.agGridOptions.groupDisplayType === 'groupRows') {
+                            this.agGridOptions.groupRowRendererParams = {
+                                innerRenderer: this.groupRowRendererFunc() || this.groupRowInnerRenderer
+                            };
+                            this.agGrid().api.setGridOption('groupRowRendererParams', this.agGridOptions.groupRowRendererParams);
+                            this.agGrid().api.redrawRows();
                         }
                         break;
                     case 'columns':
@@ -875,6 +910,15 @@ export class PowerGrid extends NGGridDirective {
                             } else {
                                 this.agGrid().api.resetColumnState();
                             }
+                        }
+                        break;
+                    case '_internalFilterModel':
+                        this.__internalFilterModel.set(this._internalFilterModel());
+                        if (this.isGridReady && change.currentValue) {
+                            this.agGrid().api.setFilterModel(change.currentValue);
+                            this.agGrid().api.onFilterChanged();
+                            this.__internalFilterModel.set(null);
+                            this._internalFilterModelChange.emit(this.__internalFilterModel());
                         }
                         break;
                     case '_internalAggCustomFuncs':
@@ -1323,6 +1367,10 @@ export class PowerGrid extends NGGridDirective {
                     this.applySortModel(columnStateJSON.sortModel);
                 }
 
+                if (columnStateJSON.filterModel && typeof columnStateJSON.filterModel === 'object') {
+                    this.agGrid().api.setFilterModel(columnStateJSON.filterModel);
+                }
+
                 this.agGrid().api.setSideBarVisible(columnStateJSON.isSideBarVisible);
             }
         }
@@ -1448,8 +1496,8 @@ export class PowerGrid extends NGGridDirective {
             columnState: this.agGrid().api.getColumnState(),
             rowGroupColumnsState: svyRowGroupColumnIds,
             isToolPanelShowing: this.agGrid().api.isToolPanelShowing(),
-            isSideBarVisible: this.agGrid().api.isSideBarVisible()
-            // filterState: gridOptions.api.getFilterModel(), TODO persist column states
+            isSideBarVisible: this.agGrid().api.isSideBarVisible(),
+            filterModel: this.agGrid().api.getFilterModel()
         };
 
         const newColumnState = JSON.stringify(columnState);
