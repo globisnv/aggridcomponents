@@ -61,7 +61,7 @@
 		"columnsAutoSizing": {"type": "string", "default" : null, "values": [{"SIZE_COLUMNS_TO_FIT":null}, {"AUTO_SIZE":"AUTO_SIZE"}, {"NONE":"NONE"}], "pushToServer": "allow", "tags": {"allowaccess": "enabled", "doc": "Auto sizing for columns. SIZE_COLUMNS_TO_FIT: make the currently visible columns fit the screen. AUTO_SIZE: the grid will work out the best width to fit the contents of the 'visible' cells in the column. NONE: no auto sizing action performed"}},
 		"continuousColumnsAutoSizing":  { "type": "boolean", "default": false, "deprecated" : "use columnsAutoSizingOn instead", "tags": {"doc": "Apply 'columnsAutoSizing' whenever columns width are changed"} },
 		"columnsAutoSizingOn":  { "type": "columnsAutoSizingOn", "tags": {"doc": "Apply 'columnsAutoSizing' for these events even if 'continuousColumnsAutoSizing' is false"} },
-		"onDragOverFunc": {"type": "clientfunction", "tags": {"doc": "Callback when dragging over a row - returns one of the strings: 'copy', 'move', 'none' depending on the allowed drag operation."}},
+		"onDragOverFunc": {"type": "clientfunction", "tags": {"doc": "Callback when dragging over a row - returns one of the strings: 'copy', 'move', 'none' depending on the allowed drag operation. Ex. (function (src, dest, e, targetCell) { return dest.id == 'myId' ? 'copy' : 'none';}). targetCell is the cell dom element that can be customized with CSS to highlight the drop target."}},
 		"onDragGetImageFunc": {"type": "clientfunction", "tags": {"doc": "Called when row(s) drag-n-drop is started, to get the drag image as an html code."}},
 		"customMainMenu": {"type": "JSMenu", "extraPropertiesCategory" : "NG-Grids", "extraProperties": { "isSeparator": "boolean", "hideForColIds": "string", "showForColIds": "string", "agGridMenuItem": {"type": "string", "values": ["", "sortAscending", "sortDescending", "sortUnSort", "columnFilter", "columnChooser", "pinSubMenu", "valueAggSubMenu", "autoSizeThis", "autoSizeAll", "rowGroup", "rowUnGroup", "resetColumns", "expandAll", "contractAll"] } }, "tags": {"doc": "Menu items to append to the columns menu, beside the default aggrid menus."}}
 	},
@@ -318,6 +318,22 @@
 				"optional": true				
 			}]
 		},
+		"onHeaderTextClick": {
+			"doc": "Called when the mouse is clicked on a header text cell (pinned top row)",
+			"parameters": [{
+				"name": "columnindex",
+				"type": "int",
+				"optional": true
+			}, {
+				"name": "event",
+				"type": "JSEvent",
+				"optional": true
+			},{
+				"name":"dataTarget",
+				"type":"string",
+				"optional": true				
+			}]
+		},
 		"onHeaderClick": {
 			"doc": "Called when the mouse is clicked on a column header that is not sortable",
 			"parameters": [{
@@ -493,6 +509,8 @@
     },	
 	"types" : {
 		"column" : {
+			"headerText" : {"type" : "tagstring"},
+			"headerTextStyleClass" : {"type" : "styleclass"},
 			"footerText" : {"type" : "tagstring"},
 			"footerStyleClass" : {"type" : "styleclass"},
 			"headerGroup": {"type" : "tagstring", "tags": {"doc": "Header group, that this column will be part of"}},
@@ -636,12 +654,12 @@
 			"aggFunc" : "clientfunction"
 		},
 		"columnsAutoSizingOn" : {
-			"columnResize" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when columns are resized"} },
-			"columnRowGroupChange" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when row grouping is changed"} },
-			"displayedColumnsChange" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when columns are added/removed"} },
-			"gridReady" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when grid is ready to be shown"} },
-			"gridSizeChange" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when grid size changes"} },
-			"toolPanelVisibleChange" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when the toolpanel visibility is changed"} }
+			"columnResize" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when columns are resized"} },
+			"columnRowGroupChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when row grouping is changed"} },
+			"displayedColumnsChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when columns are added/removed"} },
+			"gridReady" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when grid is ready to be shown"} },
+			"gridSizeChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when grid size changes"} },
+			"toolPanelVisibleChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when the toolpanel visibility is changed"} }
 		},
 		"JSDNDEvent" : {
 			"extends" : "JSEvent",
