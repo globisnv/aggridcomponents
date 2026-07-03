@@ -169,7 +169,7 @@ var keepAppliedFilterOnHide
 var tabSeq;
 
 /**
- * Callback when dragging over a row - returns one of the strings: 'copy', 'move', 'none' depending on the allowed drag operation.
+ * Callback when dragging over a row - returns one of the strings: 'copy', 'move', 'none' depending on the allowed drag operation. Ex. (function (src, dest, e, targetCell) { return dest.id == 'myId' ? 'copy' : 'none';}). targetCell is the cell dom element that can be customized with CSS to highlight the drop target.
  */
 var onDragOverFunc;
 
@@ -246,6 +246,15 @@ var handlers = {
      * @param {String} [dataTarget] Optional identifier indicating the target data context of the click.
      */
     onFooterClick: function() {},
+
+    /**
+     * Called when the mouse is clicked on a header text cell (pinned top row)
+     *
+     * @param {Number} [columnindex] The index of the header text column that was clicked.
+     * @param {JSEvent} [event] The event object associated with the click.
+     * @param {String} [dataTarget] Optional identifier indicating the target data context of the click.
+     */
+    onHeaderTextClick: function() {},
 
     /**
      * Called when the mouse is clicked on a column header that is not sortable
@@ -803,6 +812,21 @@ var svy_types = {
      * Type definition for a grid column.
      */
     column: {
+
+        /**
+         * Header text to display in the pinned top row.
+         */
+        headerText: null,
+
+        /**
+         * Defines how the header text is rendered (text, html, or sanitizedHtml).
+         */
+        headerTextShowAs: null,
+
+        /**
+         * CSS class for the header text row cell.
+         */
+        headerTextStyleClass: null,
 
         /**
          * Footer text to display in the column.
