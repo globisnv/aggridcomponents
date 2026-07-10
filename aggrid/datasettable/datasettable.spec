@@ -443,6 +443,16 @@
 			],
 			"async": true
 		},
+		"selectNextRow": {
+		},
+		"selectPreviousRow": {
+		},
+		"getRecordCount": {
+			"returns": "int"
+		},
+		"getSelectedRecordIndex": {
+			"returns": "int"
+		},
         "autoSizeAllColumns" : {
             "delayUntilFormLoads": true,
             "discardPreviouslyQueuedSimilarCalls": true,

@@ -2329,6 +2329,82 @@ export class PowerGrid extends NGGridDirective {
     }
 
     /**
+     * Selects the next leaf (non-group) row relative to the current selection and scrolls it into
+     * view. Group-header rows are skipped, so this works while the grid is grouped. If there is no
+     * next leaf row the current selection is left unchanged.
+     */
+    selectNextRow() {
+        this.moveSelectionToAdjacentRow(1);
+    }
+
+    /**
+     * Selects the previous leaf (non-group) row relative to the current selection and scrolls it
+     * into view. Group-header rows are skipped. If there is no previous leaf row the current
+     * selection is left unchanged.
+     */
+    selectPreviousRow() {
+        this.moveSelectionToAdjacentRow(-1);
+    }
+
+    private moveSelectionToAdjacentRow(direction: number) {
+        const api = this.agGrid().api;
+        const selectedNodes = api.getSelectedNodes();
+        const rowCount = api.getDisplayedRowCount();
+
+        // start from the current selection; if nothing is selected, start just outside the grid so
+        // the first step lands on the first/last row
+        let index = selectedNodes.length ? selectedNodes[0].rowIndex : (direction > 0 ? -1 : rowCount);
+        let newIndex = index + direction;
+        let nextRow = api.getDisplayedRowAtIndex(newIndex);
+        while (nextRow && nextRow.group) {
+            newIndex += direction;
+            nextRow = api.getDisplayedRowAtIndex(newIndex);
+        }
+
+        if (nextRow && nextRow.id) {
+            nextRow.setSelected(true, true);
+            api.ensureIndexVisible(newIndex, 'middle');
+        }
+    }
+
+    /**
+     * Returns the number of leaf (non-group) rows currently in the grid, honouring the active
+     * filter and sort. Useful for a "current / total" record counter when the grid is grouped.
+     */
+    getRecordCount(): number {
+        let count = 0;
+        this.agGrid().api.forEachNodeAfterFilterAndSort((node) => {
+            if (!node.group) {
+                count++;
+            }
+        });
+        return count;
+    }
+
+    /**
+     * Returns the 1-based position of the currently selected leaf row among all leaf rows (in
+     * filtered/sorted order), or 0 when nothing (or only a group row) is selected.
+     */
+    getSelectedRecordIndex(): number {
+        const selectedNodes = this.agGrid().api.getSelectedNodes();
+        if (!selectedNodes.length) {
+            return 0;
+        }
+        const selectedId = selectedNodes[0].id;
+        let position = 0;
+        let leafIndex = 0;
+        this.agGrid().api.forEachNodeAfterFilterAndSort((node) => {
+            if (!node.group) {
+                leafIndex++;
+                if (node.id === selectedId) {
+                    position = leafIndex;
+                }
+            }
+        });
+        return position;
+    }
+
+    /**
      *   Auto-sizes all columns based on content.
      */
     autoSizeAllColumns() {
