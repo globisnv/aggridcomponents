@@ -5335,6 +5335,10 @@ class FoundsetServer {
 		// if filter is changed, apply it on the root foundset, and clear the foundset cache if grouped
 		if (sUpdatedFilterModel !== this.dataGrid.filterModel && !(sUpdatedFilterModel === '{}' && this.dataGrid.filterModel === null)) {
 			this.dataGrid.filterModel = sUpdatedFilterModel;
+			this.dataGrid.lazyLoadingSelectAll = false; // EWA-4955 filter changed -> drop stale select-all inference so widening the filter doesn't auto-select newly loaded rows
+			this.dataGrid.selectionEvent = null; // EWA-4955 filter changed -> drop stale click event so AG Grid's post-reload maintained-selection re-apply (source 'api') isn't treated as a user selection and pushed to the foundset
+			this.dataGrid.multipleSelectionEvents.length = 0;
+			this.dataGrid.agGrid()?.api?.deselectAll(); // EWA-4955 filter changed -> clear stale node selection (getRowId is _svyFoundsetIndex, so selection otherwise carries onto different records at the same position)
 			const filterMyFoundsetArg = [];
 			if (rowGroupCols.length) {
 				this.dataGrid.groupManager.removeFoundsetRefAtLevel(0);
@@ -5438,6 +5442,9 @@ class FoundsetServer {
 				}
 
 				if (isColumnSortable) {
+					this.dataGrid.selectionEvent = null; // EWA-4955 sort changed -> same as filter: drop stale click event so AG Grid's post-resort maintained-selection re-apply isn't pushed onto the different records now at those positions (getRowId is _svyFoundsetIndex); foundset keeps the selected records so selection follows them to their new positions
+					this.dataGrid.multipleSelectionEvents.length = 0;
+					this.dataGrid.agGrid()?.api?.deselectAll();
 					if (this.dataGrid.isSortModelApplied) {
 						foundsetSortModel = this.dataGrid.getFoundsetSortModel(sortModel);
 						this.dataGrid.sortPromise = foundsetRefManager.sort(foundsetSortModel.sortColumns);
