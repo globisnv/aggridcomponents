@@ -60,6 +60,7 @@ const COLUMN_KEYS_TO_CHECK_FOR_CHANGES = [
 	'headerStyleClass',
 	'headerTooltip',
 	'footerText',
+	'headerText',
 	'styleClass',
 	'visible',
 	'excluded',
@@ -180,6 +181,7 @@ export class DataGrid extends NGGridDirective {
 	readonly onCellEditingStopped = input<(foundsetindex: number, columnindex: number, oldvalue: unknown, newvalue: unknown, event: Event, record: unknown) => void>(undefined);
 	readonly onColumnStateChanged = input<(columnState: string, event: Event) => void>(undefined);
 	readonly onFooterClick = input<(columnindex: number, event: Event, dataTarget: string) => void>(undefined);
+	readonly onHeaderTextClick = input<(columnindex: number, event: Event, dataTarget: string) => void>(undefined);
 	readonly onHeaderClick = input<(columnindex: number, event: Event) => void>(undefined);
 	readonly onReady = input<(event?: Event) => void>(undefined);
 	readonly onElementDataChange = input<() => void>(undefined);
@@ -312,6 +314,7 @@ export class DataGrid extends NGGridDirective {
 	isSingleClickEdit = false;
 
 	footerTextChangeListeners: any[] = [];
+	headerTextChangeListeners: any[] = [];
 
 	delayedColumnChange = null;
 
@@ -878,6 +881,11 @@ export class DataGrid extends NGGridDirective {
 			this.agGridOptions.pinnedBottomRowData = gridFooterData;
 		}
 
+		const gridHeaderData = this.getHeaderData();
+		if (gridHeaderData) {
+			this.agGridOptions.pinnedTopRowData = gridHeaderData;
+		}
+
 		// rowStyleClassDataprovider
 		if (this.rowStyleClassDataprovider()) {
 			this.agGridOptions.getRowClass = this.getRowClass;
@@ -1407,13 +1415,13 @@ export class DataGrid extends NGGridDirective {
 						i < this.previousColumns.length ? this.previousColumns[i][prop] : null;
 					const newPropertyValue = change.currentValue[i][prop];
 					let columnPropertyChanged = newPropertyValue !== oldPropertyValue;
-					if (!columnPropertyChanged && newPropertyValue && prop === 'footerText') {
+					if (!columnPropertyChanged && newPropertyValue && (prop === 'footerText' || prop === 'headerText')) {
 						columnPropertyChanged = true;
 					}
 					if (columnPropertyChanged) {
 						this.log.debug('column property changed');
 
-						if (prop !== "headerTooltip" && prop !== 'footerText' && prop !== 'headerTitle' && prop !== 'visible' && prop !== 'width') {
+						if (prop !== "headerTooltip" && prop !== 'footerText' && prop !== 'headerText' && prop !== 'headerTitle' && prop !== 'visible' && prop !== 'width') {
 							if (this.isGridReady) {
 								updateColumnDefs = true;
 								if (prop !== 'enableToolPanel' && prop !== 'excluded') {
@@ -1430,6 +1438,8 @@ export class DataGrid extends NGGridDirective {
 								this.handleColumnHeader(i, prop, newPropertyValue);
 							} else if (prop === 'footerText') {
 								this.handleColumnFooterText();
+							} else if (prop === 'headerText') {
+								this.handleColumnHeaderText();
 							} else if (prop === 'visible' || prop === 'width') {
 								// column id is either the id of the column
 								const column = this.columns()[i];
@@ -1477,6 +1487,8 @@ export class DataGrid extends NGGridDirective {
 
 		// remove registered footerText change listeners
 		this.removeFooterTextListeners();
+		// remove registered headerText change listeners
+		this.removeHeaderTextListeners();
 
 		// release grid resources
 		this.destroy();
@@ -1488,7 +1500,11 @@ export class DataGrid extends NGGridDirective {
 		if (field && params.data) {
 			displayValue = params.data[field];
 			if (displayValue == null) {
-				displayValue = NULL_VALUE; // need to use an object for null, else grouping won't work in ag grid
+				if (params.node.rowPinned) {
+					displayValue = null;
+				} else {
+					displayValue = NULL_VALUE; // need to use an object for null, else grouping won't work in ag grid
+				}
 			} else {
 				const dataGrid = params.context.componentParent;
 				const column = dataGrid.getColumn(params.column.colId);
@@ -1709,6 +1725,8 @@ export class DataGrid extends NGGridDirective {
 	getColumnDefs() {
 		// remove registered footerText change listeners
 		this.removeFooterTextListeners();
+		// remove registered headerText change listeners
+		this.removeHeaderTextListeners();
 
 		// reset headerCheckbox column params for checkbox selection column
 		this._headerCheckboxColumnParams.set(undefined);
@@ -1957,6 +1975,12 @@ export class DataGrid extends NGGridDirective {
 			if (column.footerText) {
 				this.footerTextChangeListeners.push(column.footerText.addChangeListener(() => {
 					this.handleColumnFooterText();
+				}));
+			}
+
+			if (column.headerText) {
+				this.headerTextChangeListeners.push(column.headerText.addChangeListener(() => {
+					this.handleColumnHeaderText();
 				}));
 			}
 
@@ -2341,7 +2365,7 @@ export class DataGrid extends NGGridDirective {
 			checkboxEl = this.doc.createElement('i');
 			checkboxEl.className = this.getIconCheckboxEditor(this.isInFindMode() && value === '' ? null : this.getCheckboxEditorBooleanValue(value));
 		} else {
-			const showAs = params.node.rowPinned === 'bottom' ? col.footerTextShowAs : col.showAs;
+			const showAs = params.node.rowPinned === 'bottom' ? col.footerTextShowAs : params.node.rowPinned === 'top' ? col.headerTextShowAs : col.showAs;
 			if (col != null && showAs === 'html') {
 				value = value && value.displayValue !== undefined ? value.displayValue : value;
 			} else if (col != null && showAs === 'sanitizedHtml') {
@@ -2376,6 +2400,8 @@ export class DataGrid extends NGGridDirective {
 				}
 			} else if (col.footerStyleClass && params.node.rowPinned === 'bottom') { // footer
 				styleClassProvider = col.footerStyleClass;
+			} else if (col.headerTextStyleClass && params.node.rowPinned === 'top') { // header text
+				styleClassProvider = col.headerTextStyleClass;
 			}
 		}
 
@@ -3638,11 +3664,34 @@ export class DataGrid extends NGGridDirective {
 					resultData[colId] = column.footerText[0];
 					hasFooterData = true;
 				} else {
-					resultData[colId] = '';
+					resultData[colId] = null;
 				}
 			}
 		}
 		if (hasFooterData) {
+			result.push(resultData);
+		}
+		return result;
+	}
+
+	getHeaderData() {
+		const result = [];
+		let hasHeaderData = false;
+		const resultData = {};
+		const columns = this.columns();
+		for (let i = 0; columns && i < columns.length; i++) {
+			const column = columns[i];
+			const colId = this.getColumnID(column, i);
+			if (colId) {
+				if (column.headerText && column.headerText.length) {
+					resultData[colId] = column.headerText[0];
+					hasHeaderData = true;
+				} else {
+					resultData[colId] = null;
+				}
+			}
+		}
+		if (hasHeaderData) {
 			result.push(resultData);
 		}
 		return result;
@@ -3773,12 +3822,26 @@ export class DataGrid extends NGGridDirective {
 		this.agGrid().api.setGridOption('pinnedBottomRowData', this.getFooterData())
 	}
 
+	handleColumnHeaderText() {
+		this.log.debug('header text column property changed');
+		this.agGrid().api.setGridOption('pinnedTopRowData', this.getHeaderData())
+	}
+
 	removeFooterTextListeners(): any {
 		if (this.footerTextChangeListeners.length) {
 			for (let i = 0; i < this.footerTextChangeListeners.length; i++) {
 				this.footerTextChangeListeners[i]();
 			}
 			this.footerTextChangeListeners.splice(0, this.footerTextChangeListeners.length);
+		}
+	}
+
+	removeHeaderTextListeners(): any {
+		if (this.headerTextChangeListeners.length) {
+			for (let i = 0; i < this.headerTextChangeListeners.length; i++) {
+				this.headerTextChangeListeners[i]();
+			}
+			this.headerTextChangeListeners.splice(0, this.headerTextChangeListeners.length);
 		}
 	}
 
@@ -4031,6 +4094,11 @@ export class DataGrid extends NGGridDirective {
 					const columnIndex = this.getColumnIndex(params.column.colId);
 					onFooterClick(columnIndex, params.event, this.getDataTarget(params.event));
 				}
+				const onHeaderTextClick = this.onHeaderTextClick();
+				if (params.node.rowPinned === 'top' && onHeaderTextClick) {
+					const columnIndex = this.getColumnIndex(params.column.colId);
+					onHeaderTextClick(columnIndex, params.event, this.getDataTarget(params.event));
+				}
 			} else {
 				const jsEvent = this.servoyService.createJSEvent(params.event, params.event.type);
 				if (this._internalHasDoubleClickHandler() || (params.colDef.editable && this.isColumnEditable(params))) {
@@ -4222,6 +4290,8 @@ export class DataGrid extends NGGridDirective {
 
 		// persist grouped columns state
 		this.setStateGroupedColumns(rowGroupCols);
+
+		this.detectChanges();
 
 		// resize the columns
 		this.setTimeout(() => {
@@ -4649,6 +4719,7 @@ export class DataGrid extends NGGridDirective {
 	 * */
 	notifyDataChange() {
 		this.dirtyCache = true;
+		this.detectChanges();
 	}
 
 	/**
@@ -4861,40 +4932,50 @@ export class DataGrid extends NGGridDirective {
 		const dragSupported = $event.dataTransfer.types.length && $event.dataTransfer.types[0] === 'nggrids-drag/json';
 		if (dragSupported) {
 			this.handleDragViewportScroll($event);
-			let dragOver: any = false;
 			const onDragOverFunc = this.onDragOverFunc();
 			if (onDragOverFunc) {
-				const overRow = this.getNodeForElement($event.target);
-				let overDragData = null;
-				if (overRow) {
-					const overRowData = overRow.data || Object.assign(overRow.groupData, overRow.aggData);
-					overDragData = {};
-					for (const p in overRowData) {
-						if (overRowData.hasOwnProperty(p)) {
-							const col = this.getColumn(p);
-							if (col) {
-								overDragData[col.id ? col.id : p] = overRowData[p];
+				const targetColumn = $event.target.closest('[col-id]');
+				const validTargetColumn = (targetColumn && targetColumn.classList.contains('ag-cell')) ? targetColumn : null;
+				if (validTargetColumn !== this.dragOverTargetColumn) {
+					this.restoreDragOverTargetColumn();
+					this.dragOverTargetColumn = validTargetColumn;
+					this.dragOverTargetColumnClassName = validTargetColumn ? validTargetColumn.className : null;
+					if (validTargetColumn) {
+						const overRow = this.getNodeForElement($event.target);
+						let overDragData = null;
+						if (overRow) {
+							const overRowData = overRow.data || Object.assign(overRow.groupData, overRow.aggData);
+							overDragData = {};
+							for (const p in overRowData) {
+								if (overRowData.hasOwnProperty(p)) {
+									const col = this.getColumn(p);
+									if (col) {
+										overDragData[col.id ? col.id : p] = overRowData[p];
+									}
+								}
 							}
 						}
+						const dragData = this.registrationService.datagridService.getDragData();
+						const jsDragOverEvent = this.servoyService.createJSEvent($event, 'onDragOver') as JSDNDEvent;
+						jsDragOverEvent.targetColumnId = validTargetColumn.getAttribute('col-id');
+						jsDragOverEvent.sourceGridName = dragData.sourceGridName;
+						jsDragOverEvent.sourceColumnId = dragData.sourceColumnId;
+						this.lastDragOverResult = onDragOverFunc(dragData.records, overDragData, jsDragOverEvent, validTargetColumn);
+					} else {
+						this.lastDragOverResult = false;
 					}
 				}
-				const targetColumn = $event.target.closest('[col-id]');
-				const dragData = this.registrationService.datagridService.getDragData();
-
-				const jsDragOverEvent = this.servoyService.createJSEvent($event, 'onDragOver') as JSDNDEvent;
-				jsDragOverEvent.targetColumnId = targetColumn ? targetColumn.getAttribute('col-id') : '';
-				jsDragOverEvent.sourceGridName = dragData.sourceGridName;
-				jsDragOverEvent.sourceColumnId = dragData.sourceColumnId;
-				dragOver = onDragOverFunc(dragData.records, overDragData, jsDragOverEvent);
-			} else {
-				dragOver = true;
-			}
-			if (dragOver) {
-				if (typeof dragOver === 'string') {
-					$event.dataTransfer.dropEffect = dragOver;
-				} else {
-					$event.dataTransfer.dropEffect = 'copy';
+				const dragOver = this.lastDragOverResult;
+				if (dragOver) {
+					if (typeof dragOver === 'string') {
+						$event.dataTransfer.dropEffect = dragOver;
+					} else {
+						$event.dataTransfer.dropEffect = 'copy';
+					}
+					$event.preventDefault();
 				}
+			} else {
+				$event.dataTransfer.dropEffect = 'copy';
 				$event.preventDefault();
 			}
 		}
@@ -4903,6 +4984,7 @@ export class DataGrid extends NGGridDirective {
 	gridDrop($event) {
 		$event.preventDefault();
 		this.cancelDragViewportScroll();
+		this.restoreDragOverTargetColumn();
 		const onDrop = this.onDrop();
 		if (onDrop) {
 			const targetColumn = $event.target.closest('[col-id]');
@@ -5291,6 +5373,7 @@ class FoundsetServer {
 			}
 			// is in group view first time the form is shown ?
 			this.dataGrid.isGroupView = rowGroupCols.length > 0;
+			this.dataGrid.detectChanges();
 		}
 
 		// Sort on the foundset Group
@@ -6456,6 +6539,9 @@ class GroupNode {
 export class DataGridColumn extends BaseCustomObject {
 	footerText: any;
 	footerTextShowAs: string;
+	headerText: any;
+	headerTextShowAs: string;
+	headerTextStyleClass: string;
 	headerTitle: string;
 	footerStyleClass: string;
 	headerStyleClass: string;

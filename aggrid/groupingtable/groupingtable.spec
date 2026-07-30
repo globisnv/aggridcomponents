@@ -61,7 +61,7 @@
 		"editNextCellOnEnter":  { "type": "boolean", "default": false },
 		"moveToNextEditableCellOnTab":  { "type": "boolean", "default": true, "tags": {"doc": "When tab is pressed during cell editing, move to the next editable cell."} },
 		"tabSeq": { "type": "tabseq", "tags": { "scope": "design" } },
-		"onDragOverFunc": {"type": "clientfunction", "tags": {"doc": "Callback when dragging over a row - returns one of the strings: 'copy', 'move', 'none' depending on the allowed drag operation."}},
+		"onDragOverFunc": {"type": "clientfunction", "tags": {"doc": "Callback when dragging over a row - returns one of the strings: 'copy', 'move', 'none' depending on the allowed drag operation. Ex. (function (src, dest, e, targetCell) { return dest.id == 'myId' ? 'copy' : 'none';}). targetCell is the cell dom element that can be customized with CSS to highlight the drop target."}},
 		"onDragGetImageFunc": {"type": "clientfunction", "tags": {"doc": "Called when row(s) drag-n-drop is started, to get the drag image as an html code."}},
 		"_internalFilterModel": { "type": "object", "tags": {"scope" : "private", "allowaccess": "enabled"}, "pushToServer": "allow" },
 		"_internalGroupRowsSelection": { "type": "record[]", "tags": {"scope" : "private"}, "pushToServer": "allow"},
@@ -189,6 +189,22 @@
 		},
 		"onFooterClick": {
 			"doc": "Called when the mouse is clicked on a footer cell",
+			"parameters": [{
+				"name": "columnindex",
+				"type": "int",
+				"optional": true
+			}, {
+				"name": "event",
+				"type": "JSEvent",
+				"optional": true
+			},{
+				"name":"dataTarget",
+				"type":"string",
+				"optional": true				
+			}]
+		},
+		"onHeaderTextClick": {
+			"doc": "Called when the mouse is clicked on a header text cell (pinned top row)",
 			"parameters": [{
 				"name": "columnindex",
 				"type": "int",
@@ -676,6 +692,9 @@
 	},
 	"types" : {
 		"column" : {
+			"headerText" : {"type" : "tagstring", "forFoundset": "myFoundset"},
+			"headerTextShowAs": { "type": "string", "values": [{"text":null}, {"html":"html"}, {"sanitizedHtml":"sanitizedHtml"}] },
+			"headerTextStyleClass" : {"type" : "styleclass"},
 			"footerText" : {"type" : "tagstring", "forFoundset": "myFoundset"},
 			"footerTextShowAs": { "type": "string", "values": [{"text":null}, {"html":"html"}, {"sanitizedHtml":"sanitizedHtml"}] },
 			"headerTitle": {"type" : "titlestring", "for": "dataprovider", "tags": { "wizard": "4","basic": true, "useAsCaptionInDeveloper" : true, "captionPriority" : 1, "showInOutlineView": true, "doc": "If the column has a database linked dataprovider, the default value of the headerTitle is the title text of the database column or if that is not set, the database column name." }},
@@ -824,12 +843,12 @@
 			"f": "function"
 		},
 		"columnsAutoSizingOn" : {
-			"columnResize" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when columns are resized"} },
-			"columnRowGroupChange" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when row grouping is changed"} },
-			"displayedColumnsChange" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when columns are added/removed"} },
-			"gridReady" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when grid is ready to be shown"} },
-			"gridSizeChange" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when grid size changes"} },
-			"toolPanelVisibleChange" : { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when the toolpanel visibility is changed"} }
+			"columnResize" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when columns are resized"} },
+			"columnRowGroupChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when row grouping is changed"} },
+			"displayedColumnsChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when columns are added/removed"} },
+			"gridReady" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when grid is ready to be shown"} },
+			"gridSizeChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when grid size changes"} },
+			"toolPanelVisibleChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when the toolpanel visibility is changed"} }
 		},
 		"JSDNDEvent" : {
 			"extends" : "JSEvent",
