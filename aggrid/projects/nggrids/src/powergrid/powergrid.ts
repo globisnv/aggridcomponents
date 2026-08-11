@@ -14,6 +14,7 @@ import { SelectEditor } from '../editors/selecteditor';
 import { TypeaheadEditor } from '../editors/typeaheadeditor';
 import { ValuelistFilter } from '../filters/valuelistfilter';
 import { RadioFilter } from '../filters/radiofilter';
+import { DateFilter } from '../filters/datefilter';
 import { NgbTypeaheadConfig } from '@ng-bootstrap/ng-bootstrap';
 import { RegistrationService } from '../datagrid/commons/registration.service';
 
@@ -122,6 +123,8 @@ export class PowerGrid extends NGGridDirective {
     readonly columnStateChange = output<any>();
     readonly _internalExpandedState = input<any>(undefined);
     readonly _internalExpandedStateChange = output<any>();
+    readonly _internalFilterModel = input<unknown>(undefined);
+    readonly _internalFilterModelChange = output<unknown>();
 
     readonly _internalResetLazyLoading = input<any>(undefined);
     readonly _internalResetLazyLoadingChange = output<any>();
@@ -148,6 +151,7 @@ export class PowerGrid extends NGGridDirective {
     _checkboxSelection = signal<boolean>(undefined);
     _columnsAutoSizing = signal<string>(undefined);
     __internalExpandedState = signal<any>(undefined);
+    __internalFilterModel = signal<unknown>(undefined);
     _data = signal<any>(undefined);
     _lastRowIndex = signal<number>(undefined);
 
@@ -519,7 +523,8 @@ export class PowerGrid extends NGGridDirective {
             resetRowDataOnUpdate: true,
             components: {
                 valuelistFilter: ValuelistFilter,
-                radioFilter: RadioFilter
+                radioFilter: RadioFilter,
+                dateFilter: DateFilter
             }
         };
 
@@ -790,10 +795,29 @@ export class PowerGrid extends NGGridDirective {
                         break;
                     case 'updateData':
                         if (change.currentValue) {
-                            this.agGrid().api.applyTransaction(change.currentValue);
-                            if(change.currentValue.update) {
+                            const transaction = change.currentValue;
+                            // updateRows requires a full row. ag-grid throws if an 'update' targets a row
+                            // id that isn't present (live updates can't guarantee the row is loaded), so
+                            // re-route any missing rows to 'add' to make it a safe upsert.
+                            if (transaction.update) {
+                                const present = [];
+                                const missing = [];
+                                for (const rowData of transaction.update) {
+                                    if (this.agGrid().api.getRowNode(this.generateRowId(rowData))) {
+                                        present.push(rowData);
+                                    } else {
+                                        missing.push(rowData);
+                                    }
+                                }
+                                transaction.update = present;
+                                if (missing.length) {
+                                    transaction.add = (transaction.add || []).concat(missing);
+                                }
+                            }
+                            this.agGrid().api.applyTransaction(transaction);
+                            if (transaction.update) {
                                 const rowNodes = [];
-                                for (const rowData of change.currentValue.update) {
+                                for (const rowData of transaction.update) {
                                     const rowId = this.generateRowId(rowData);
                                     const rowNode = this.agGrid().api.getRowNode(rowId);
                                     if (rowNode) {
@@ -805,6 +829,17 @@ export class PowerGrid extends NGGridDirective {
                                 }
                             }
                             this.servoyApi.callServerSideApi('clearUpdateData', []);
+                        }
+                        break;
+                    case 'groupRowRendererFunc':
+                        // Re-apply the group row renderer at runtime (it is otherwise only wired during
+                        // initial grid-options setup), then redraw so existing group rows pick it up.
+                        if (this.isGridReady && this.agGridOptions.groupDisplayType === 'groupRows') {
+                            this.agGridOptions.groupRowRendererParams = {
+                                innerRenderer: this.groupRowRendererFunc() || this.groupRowInnerRenderer
+                            };
+                            this.agGrid().api.setGridOption('groupRowRendererParams', this.agGridOptions.groupRowRendererParams);
+                            this.agGrid().api.redrawRows();
                         }
                         break;
                     case 'columns':
@@ -894,6 +929,15 @@ export class PowerGrid extends NGGridDirective {
                             } else {
                                 this.agGrid().api.resetColumnState();
                             }
+                        }
+                        break;
+                    case '_internalFilterModel':
+                        this.__internalFilterModel.set(this._internalFilterModel());
+                        if (this.isGridReady && change.currentValue) {
+                            this.agGrid().api.setFilterModel(change.currentValue);
+                            this.agGrid().api.onFilterChanged();
+                            this.__internalFilterModel.set(null);
+                            this._internalFilterModelChange.emit(this.__internalFilterModel());
                         }
                         break;
                     case '_internalAggCustomFuncs':
@@ -2344,6 +2388,82 @@ export class PowerGrid extends NGGridDirective {
                 this.agGrid().api.ensureIndexVisible(matchingRows[0], 'middle');
             }
         }, 0);
+    }
+
+    /**
+     * Selects the next leaf (non-group) row relative to the current selection and scrolls it into
+     * view. Group-header rows are skipped, so this works while the grid is grouped. If there is no
+     * next leaf row the current selection is left unchanged.
+     */
+    selectNextRow() {
+        this.moveSelectionToAdjacentRow(1);
+    }
+
+    /**
+     * Selects the previous leaf (non-group) row relative to the current selection and scrolls it
+     * into view. Group-header rows are skipped. If there is no previous leaf row the current
+     * selection is left unchanged.
+     */
+    selectPreviousRow() {
+        this.moveSelectionToAdjacentRow(-1);
+    }
+
+    private moveSelectionToAdjacentRow(direction: number) {
+        const api = this.agGrid().api;
+        const selectedNodes = api.getSelectedNodes();
+        const rowCount = api.getDisplayedRowCount();
+
+        // start from the current selection; if nothing is selected, start just outside the grid so
+        // the first step lands on the first/last row
+        let index = selectedNodes.length ? selectedNodes[0].rowIndex : (direction > 0 ? -1 : rowCount);
+        let newIndex = index + direction;
+        let nextRow = api.getDisplayedRowAtIndex(newIndex);
+        while (nextRow && nextRow.group) {
+            newIndex += direction;
+            nextRow = api.getDisplayedRowAtIndex(newIndex);
+        }
+
+        if (nextRow && nextRow.id) {
+            nextRow.setSelected(true, true);
+            api.ensureIndexVisible(newIndex, 'middle');
+        }
+    }
+
+    /**
+     * Returns the number of leaf (non-group) rows currently in the grid, honouring the active
+     * filter and sort. Useful for a "current / total" record counter when the grid is grouped.
+     */
+    getRecordCount(): number {
+        let count = 0;
+        this.agGrid().api.forEachNodeAfterFilterAndSort((node) => {
+            if (!node.group) {
+                count++;
+            }
+        });
+        return count;
+    }
+
+    /**
+     * Returns the 1-based position of the currently selected leaf row among all leaf rows (in
+     * filtered/sorted order), or 0 when nothing (or only a group row) is selected.
+     */
+    getSelectedRecordIndex(): number {
+        const selectedNodes = this.agGrid().api.getSelectedNodes();
+        if (!selectedNodes.length) {
+            return 0;
+        }
+        const selectedId = selectedNodes[0].id;
+        let position = 0;
+        let leafIndex = 0;
+        this.agGrid().api.forEachNodeAfterFilterAndSort((node) => {
+            if (!node.group) {
+                leafIndex++;
+                if (node.id === selectedId) {
+                    position = leafIndex;
+                }
+            }
+        });
+        return position;
     }
 
     /**
