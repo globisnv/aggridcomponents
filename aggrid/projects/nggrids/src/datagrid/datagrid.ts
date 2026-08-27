@@ -258,6 +258,8 @@ export class DataGrid extends NGGridDirective {
 	isRowAutoHeight = false;
 
 	onSelectionChangedTimeout: any = null;
+	// [JBA - PSA-3769] { selectionEvent, source } for the debounced onSelectionChangedEx
+	pendingSelectionEvent: any = null;
 	requestSelectionPromises = new Array();
 	multipleSelectionEvents = new Array();
 
@@ -787,7 +789,7 @@ export class DataGrid extends NGGridDirective {
 							const focusedRow = this.agGrid().api.getDisplayedRowAtIndex(focusedCell.rowIndex);
 							if (focusedRow && !focusedRow.isSelected()) {
 								if (focusedRow.id) { // row is already created
-									this.selectionEvent = { type: 'key' };
+									this.selectionEvent = { type: 'key', rowIndex: focusedCell.rowIndex };
 									focusedRow.setSelected(true, true);
 								} else {
 									// row is not yet created, postpone selection & focus
@@ -832,7 +834,7 @@ export class DataGrid extends NGGridDirective {
 					// need a timeout 0 because we can't call grid api during row creation
 					this.setTimeout(() => {
 						this.agGrid().api.clearFocusedCell(); // start clean, this will force setting the focus on the postFocusCell
-						this.selectionEvent = { type: 'key' };
+						this.selectionEvent = { type: 'key', rowIndex };
 						focusedRow.setSelected(true, true);
 						this.agGrid().api.setFocusedCell(rowIndex, colKey);
 					}, 0);
@@ -3470,7 +3472,7 @@ export class DataGrid extends NGGridDirective {
 						this.agGrid().api.ensureNodeVisible(nextRow);
 						return null;
 					}
-					this.selectionEvent = { type: 'key', event: params.event };
+					this.selectionEvent = { type: 'key', event: params.event, rowIndex: newIndex };
 					nextRow.setSelected(true, true);
 					suggestedNextCell.rowIndex = newIndex;
 				}
@@ -3489,7 +3491,7 @@ export class DataGrid extends NGGridDirective {
 						this.agGrid().api.ensureNodeVisible(nextRow);
 						return null;
 					}
-					this.selectionEvent = { type: 'key', event: params.event };
+					this.selectionEvent = { type: 'key', event: params.event, rowIndex: newIndex };
 					nextRow.setSelected(true, true);
 					suggestedNextCell.rowIndex = newIndex;
 				}
@@ -3519,7 +3521,7 @@ export class DataGrid extends NGGridDirective {
 			}
 
 			if (!suggestedNextCellSelected) {
-				this.selectionEvent = { type: 'key', event: params.event };
+				this.selectionEvent = { type: 'key', event: params.event, rowIndex: suggestedNextCell.rowIndex };
 				this.agGrid().api.forEachNode((node) => {
 					if (suggestedNextCell.rowIndex === node.rowIndex) {
 						node.setSelected(true, true);
@@ -3863,32 +3865,64 @@ export class DataGrid extends NGGridDirective {
 	}
 
 	onSelectionChanged(e: SelectionChangedEvent) {
-		if (this.selectionEvent && this.selectionEvent.event &&
-			this.selectionEvent.event.type === 'click' && this.selectionEvent.event.detail === 2) {
+		// [JBA - PSA-3769] consume the user event and keep the source with it, so a later selection change
+		// raised by ag grid itself is not handled as this user selection
+		const selectionEvent = this.selectionEvent;
+		this.selectionEvent = null;
+		const source = e ? e.source : undefined;
+
+		if (selectionEvent && selectionEvent.event &&
+			selectionEvent.event.type === 'click' && selectionEvent.event.detail === 2) {
 			// double click event, ignore it, the selection is already set by the first click
 			return;
 		}
 		if (this.agGridOptions.rowSelection['mode'] === 'multiRow') {
-			this.multipleSelectionEvents.push(this.selectionEvent);
+			this.multipleSelectionEvents.push({ selectionEvent, source });
 			this.onMultipleSelectionChangedEx(e);
 		} else {
+			// [JBA - PSA-3769] a programmatic selection change in between re-schedules the timer, keep the click
+			if (selectionEvent) {
+				this.pendingSelectionEvent = { selectionEvent, source };
+			}
 			if (this.onSelectionChangedTimeout) {
 				clearTimeout(this.onSelectionChangedTimeout);
 			}
 			this.onSelectionChangedTimeout = this.setTimeout(() => {
 				this.onSelectionChangedTimeout = null;
-				this.onSelectionChangedEx(this.selectionEvent, e);
+				const pending = this.pendingSelectionEvent;
+				this.pendingSelectionEvent = null;
+				this.onSelectionChangedEx(pending ? pending.selectionEvent : null, e, pending ? pending.source : source);
 			}, 250);
 		}
 	}
 
 	onMultipleSelectionChangedEx(e?: SelectionChangedEvent) {
 		if (!this.requestSelectionPromises.length && this.multipleSelectionEvents.length) {
-			this.onSelectionChangedEx(this.multipleSelectionEvents.shift(), e);
+			const queued = this.multipleSelectionEvents.shift();
+			this.onSelectionChangedEx(queued.selectionEvent, e, queued.source);
 		}
 	}
 
-	onSelectionChangedEx(selectionEvent: any, agGridSelectionEvent: SelectionChangedEvent) {
+	/**
+	 * [JBA - PSA-3769] Whether the selection change carries user intent. ag grid also raises
+	 * selectionChanged for its own bookkeeping, 'rowDataChanged' when the server side row model evicts
+	 * rows outside maxBlocksInCache being the important one.
+	 */
+	isUserSelectionSource(source: string | undefined): boolean {
+		return source !== 'rowDataChanged' && source !== 'rowGroupChanged' && source !== 'selectableChanged'
+			&& source !== 'gridInitializing' && source !== 'masterDetail';
+	}
+
+	/**
+	 * [JBA - PSA-3769] Whether it is a select all handled by ag grid itself (ctrl+A, select all checkbox).
+	 * Those do not go through a click or key handler, so they have no selectionEvent.
+	 */
+	isSelectAllSource(source: string | undefined): boolean {
+		return source === 'keyboardSelectAll' || source === 'uiSelectAll'
+			|| source === 'uiSelectAllFiltered' || source === 'uiSelectAllCurrentPage';
+	}
+
+	onSelectionChangedEx(selectionEvent: any, agGridSelectionEvent: SelectionChangedEvent, source?: string) {
 		// Don't trigger foundset selection if table is grouping
 		const _internalGroupRowsSelection = this.__internalGroupRowsSelection();
 		if (this.isTableGrouped()) {
@@ -3953,10 +3987,33 @@ export class DataGrid extends NGGridDirective {
 			this.requestFocus(this.requestFocusColumnIndex);
 		}
 
-		if (selectionEvent) {
+		// [JBA - PSA-3769] only a change with user intent may rebuild the foundset selection, ag grid
+		// bookkeeping falls through to selectedRowIndexesChanged() below which re-syncs the nodes
+		const selectionSource = source !== undefined ? source : agGridSelectionEvent?.source;
+		if ((selectionEvent || this.isSelectAllSource(selectionSource)) && this.isUserSelectionSource(selectionSource)) {
 			let foundsetIndexes: any;
-			if (this.foundset.foundset.multiSelect && selectionEvent.type === 'click' && selectionEvent.event &&
-				(selectionEvent.event.ctrlKey || selectionEvent.event.shiftKey)) {
+			// [JBA - PSA-3769] derive the new selection from the foundset selection, which is complete, plus
+			// what the user did. Reading it back from the row nodes would drop every selected record that
+			// the server side row model does not currently hold.
+			const isMultiSelectGesture = this.foundset.foundset.multiSelect &&
+				selectionEvent && selectionEvent.type === 'click' && selectionEvent.event &&
+				(selectionEvent.event.ctrlKey || selectionEvent.event.shiftKey);
+
+			if (this.isSelectAllSource(selectionSource)) {
+				// [JBA - PSA-3769] a select all is kept as a state flag with no selected nodes, so take the
+				// rows the grid holds; select all stays on the loaded records
+				foundsetIndexes = new Array();
+				if (this.foundset.foundset.multiSelect) {
+					this.agGrid().api.forEachNode((node: any) => {
+						if (!node.group && node.rowIndex != null && foundsetIndexes.indexOf(node.rowIndex) === -1) {
+							foundsetIndexes.push(node.rowIndex);
+						}
+					});
+				}
+			} else if (selectionEvent.rowIndex === undefined || selectionEvent.rowIndex === null) {
+				// a selection change we cannot attribute to a row; leave the foundset selection alone
+				foundsetIndexes = new Array();
+			} else if (isMultiSelectGesture) {
 				foundsetIndexes = this.foundset.foundset.selectedRowIndexes.slice();
 
 				if (selectionEvent.event.shiftKey) { // shifkey, select range of rows in multiselect
@@ -3994,11 +4051,8 @@ export class DataGrid extends NGGridDirective {
 					else foundsetIndexes.splice(selectionIndex, 1);
 				}
 			} else {
-				foundsetIndexes = new Array();
-				const selectedNodes = this.agGrid().api.getSelectedNodes();
-				for (const node of selectedNodes) {
-					if (node && foundsetIndexes.indexOf(node.rowIndex) === -1) foundsetIndexes.push(node.rowIndex);
-				}
+				// plain click or keyboard navigation: the row the user acted on becomes the selection
+				foundsetIndexes = [selectionEvent.rowIndex];
 			}
 
 			if (foundsetIndexes.length > 0) {
