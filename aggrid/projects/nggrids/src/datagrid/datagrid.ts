@@ -4084,6 +4084,12 @@ export class DataGrid extends NGGridDirective {
 						} else {
 							this.log.error('requestSelectionPromises: resolved promise not found in queue');
 						}
+						// [JBA - PSA-3769] the server can end up with a different selection than the one requested,
+						// for instance when a scripted setSelectedIndexes runs in the same call. Its change
+						// notification was skipped while this request was pending, so re-sync the nodes here.
+						if (JSON.stringify(this.foundset.foundset.selectedRowIndexes) !== JSON.stringify(foundsetIndexes)) {
+							this.selectedRowIndexesChanged();
+						}
 						if (this.scrollToSelectionWhenSelectionReady) {
 							this.scrollToSelection();
 						}
@@ -4669,6 +4675,13 @@ export class DataGrid extends NGGridDirective {
 				} else {
 					this.refreshDatasource();
 				}
+			}
+			// [JBA - PSA-3769] a selection change can arrive in the same notification as the viewport change,
+			// for instance when a scripted setSelectedIndexes also loaded the records it selects. The return
+			// below would drop it, so apply it here as well. On a refreshDatasource the reload re-applies it.
+			if (changeEvent.selectedRowIndexesChanged && !this.requestSelectionPromises.length) {
+				this.selectedRowIndexesChanged();
+				this.scrollToSelection();
 			}
 			return;
 		}
