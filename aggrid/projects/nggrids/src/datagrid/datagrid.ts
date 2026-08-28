@@ -4595,6 +4595,13 @@ export class DataGrid extends NGGridDirective {
 					this.refreshDatasource();
 				}
 			}
+			// a selection change can arrive in the same notification as the viewport change, for instance
+			// when a scripted setSelectedIndexes also loads the records it selects. The return below would
+			// drop it, so apply it here as well.
+			if (changeEvent.selectedRowIndexesChanged && !this.requestSelectionPromises.length) {
+				this.selectedRowIndexesChanged();
+				this.scrollToSelection();
+			}
 			return;
 		}
 
