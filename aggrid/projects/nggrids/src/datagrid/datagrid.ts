@@ -3997,6 +3997,12 @@ export class DataGrid extends NGGridDirective {
 						} else {
 							this.log.error('requestSelectionPromises: resolved promise not found in queue');
 						}
+						// the server can end up with a different selection than the one requested, for
+						// instance when a scripted setSelectedIndexes runs during the same call. Its
+						// change notification is skipped while this request is pending, so re-sync here.
+						if (JSON.stringify(this.foundset.foundset.selectedRowIndexes) !== JSON.stringify(foundsetIndexes)) {
+							this.selectedRowIndexesChanged();
+						}
 						if (this.scrollToSelectionWhenSelectionReady) {
 							this.scrollToSelection();
 						}
