@@ -265,6 +265,8 @@ export class DataGrid extends NGGridDirective {
 	isRowAutoHeight = false;
 
 	onSelectionChangedTimeout: any = null;
+	// { selectionEvent, source } for the debounced (single select) onSelectionChangedEx
+	pendingSelectionEvent: any = null;
 	requestSelectionPromises = new Array();
 	multipleSelectionEvents = new Array();
 
@@ -3830,32 +3832,67 @@ export class DataGrid extends NGGridDirective {
 	}
 
 	onSelectionChanged(e: SelectionChangedEvent) {
-		if (this.selectionEvent && this.selectionEvent.event &&
-			this.selectionEvent.event.type === 'click' && this.selectionEvent.event.detail === 2) {
+		// consume the user event: it is not cleared after being handled, so a selection change that ag
+		// grid raises afterwards for its own node updates (source 'api') would be handled as if the user
+		// had made it
+		const selectionEvent = this.selectionEvent;
+		this.selectionEvent = null;
+		// keep the ag grid source with the event, a queued event can be handled later by a call that has
+		// a different event, or none at all
+		const source = e ? e.source : undefined;
+
+		if (selectionEvent && selectionEvent.event &&
+			selectionEvent.event.type === 'click' && selectionEvent.event.detail === 2) {
 			// double click event, ignore it, the selection is already set by the first click
 			return;
 		}
 		if ((this.agGridOptions.rowSelection as any)['mode'] === 'multiRow') {
-			this.multipleSelectionEvents.push(this.selectionEvent);
+			this.multipleSelectionEvents.push({ selectionEvent, source });
 			this.onMultipleSelectionChangedEx(e);
 		} else {
+			// a selection change in between re-schedules the debounce, keep the user event
+			if (selectionEvent) {
+				this.pendingSelectionEvent = { selectionEvent, source };
+			}
 			if (this.onSelectionChangedTimeout) {
 				clearTimeout(this.onSelectionChangedTimeout);
 			}
 			this.onSelectionChangedTimeout = this.setTimeout(() => {
 				this.onSelectionChangedTimeout = null;
-				this.onSelectionChangedEx(this.selectionEvent, e);
+				const pending = this.pendingSelectionEvent;
+				this.pendingSelectionEvent = null;
+				this.onSelectionChangedEx(pending ? pending.selectionEvent : null, e, pending ? pending.source : source);
 			}, 250);
 		}
 	}
 
 	onMultipleSelectionChangedEx(e?: SelectionChangedEvent) {
 		if (!this.requestSelectionPromises.length && this.multipleSelectionEvents.length) {
-			this.onSelectionChangedEx(this.multipleSelectionEvents.shift()!, e!);
+			const queued = this.multipleSelectionEvents.shift()!;
+			this.onSelectionChangedEx(queued.selectionEvent, e!, queued.source);
 		}
 	}
 
-	onSelectionChangedEx(selectionEvent: any, agGridSelectionEvent: SelectionChangedEvent) {
+	/**
+	 * ag grid also raises selectionChanged for its own bookkeeping, 'rowDataChanged' when the server side
+	 * row model evicts rows that fall outside maxBlocksInCache being the important one. Rebuilding the
+	 * foundset selection from those would truncate it to the rows that happen to be loaded.
+	 */
+	isUserSelectionSource(source: string | undefined): boolean {
+		return source !== 'rowDataChanged' && source !== 'rowGroupChanged' && source !== 'selectableChanged'
+			&& source !== 'gridInitializing' && source !== 'masterDetail';
+	}
+
+	/**
+	 * A select all done by ag grid itself (ctrl+A, select all checkbox). It is kept as a state flag with
+	 * no selected nodes, so getSelectedNodes() is empty and the loaded nodes have to be used instead.
+	 */
+	isSelectAllSource(source: string | undefined): boolean {
+		return source === 'keyboardSelectAll' || source === 'uiSelectAll'
+			|| source === 'uiSelectAllFiltered' || source === 'uiSelectAllCurrentPage';
+	}
+
+	onSelectionChangedEx(selectionEvent: any, agGridSelectionEvent: SelectionChangedEvent, source?: string) {
 		// Don't trigger foundset selection if table is grouping
 		const _internalGroupRowsSelection = this.__internalGroupRowsSelection();
 		if (this.isTableGrouped()) {
@@ -3920,9 +3957,20 @@ export class DataGrid extends NGGridDirective {
 			this.requestFocus(this.requestFocusColumnIndex);
 		}
 
-		if (selectionEvent) {
+		const selectionSource = source !== undefined ? source : (agGridSelectionEvent ? agGridSelectionEvent.source : undefined);
+		if ((selectionEvent || this.isSelectAllSource(selectionSource)) && this.isUserSelectionSource(selectionSource)) {
 			let foundsetIndexes: any;
-			if (this.foundset.foundset.multiSelect && selectionEvent.type === 'click' && selectionEvent.event &&
+			if (this.isSelectAllSource(selectionSource)) {
+				// getSelectedNodes() is empty for a select all, take the rows the grid holds
+				foundsetIndexes = new Array();
+				if (this.foundset.foundset.multiSelect) {
+					this.agGrid()!.api.forEachNode((node: any) => {
+						if (!node.group && node.rowIndex != null && foundsetIndexes.indexOf(node.rowIndex) === -1) {
+							foundsetIndexes.push(node.rowIndex);
+						}
+					});
+				}
+			} else if (this.foundset.foundset.multiSelect && selectionEvent.type === 'click' && selectionEvent.event &&
 				(selectionEvent.event.ctrlKey || selectionEvent.event.shiftKey)) {
 				foundsetIndexes = this.foundset.foundset.selectedRowIndexes.slice();
 
