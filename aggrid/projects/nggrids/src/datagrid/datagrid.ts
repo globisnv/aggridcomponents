@@ -595,7 +595,7 @@ export class DataGrid extends NGGridDirective {
 			infiniteInitialRowCount: CHUNK_SIZE, // TODO should be the foundset default (also for grouping ?)
 			maxBlocksInCache,
 			purgeClosedRowNodes: true,
-			enableBrowserTooltips: false,
+			enableBrowserTooltips: true,
 			getRowId: (param: GetRowIdParams) => param.data._svyFoundsetUUID + '_' + param.data._svyFoundsetIndex,
 			onGridSizeChanged: () => {
 				this.setTimeout(() => {
