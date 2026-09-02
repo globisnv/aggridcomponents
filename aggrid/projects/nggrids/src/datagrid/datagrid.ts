@@ -6,7 +6,7 @@ import {
 	GetMainMenuItemsParams,
 	ProcessRowParams
 } from 'ag-grid-community';
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Inject, Renderer2, SecurityContext, SimpleChanges, DOCUMENT, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, Inject, Renderer2, SecurityContext, SimpleChanges, DOCUMENT, computed, input, output, signal, viewChild } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { LoggerFactory, ChangeType, IFoundset, FoundsetChangeEvent, Deferred, FormattingService, ServoyPublicService, BaseCustomObject, JSEvent, PopupStateService } from '@servoy/public';
 import { DatePicker } from '../editors/datepicker';
@@ -54,6 +54,19 @@ const CACHED_CHUNK_BLOCKS = 2;
 
 export const NULL_VALUE = { displayValue: '', realValue: null };
 NULL_VALUE.toString = () => '';
+
+/** gap between the design mode card and the header cell it describes, in px */
+const DESIGN_HOVER_GAP = 7;
+
+/**
+ * What a column really is, built and i18n labelled by the server. Mirrors DesignFieldInfo in
+ * globisservices - deliberately redeclared, @servoy/nggrids must not depend on @globis/*.
+ */
+export interface DesignColumnInfo {
+	dataprovider: string;
+	rows: Array<{ label: string; value: string }>;
+	description?: string;
+}
 
 const COLUMN_KEYS_TO_CHECK_FOR_CHANGES = [
 	'headerTitle',
@@ -189,6 +202,36 @@ export class DataGrid extends NGGridDirective {
 	readonly onSelectedRowsChanged = input<(isgroupselection?: boolean, groupcolumnid?: string, groupkey?: unknown, groupselection?: boolean, event?: Event) => void>(undefined);
 	readonly onSort = input<(columnindexes: number[], sorts: string[]) => Promise<unknown>>(undefined);
 	readonly tooltipTextRefreshData = input<string>(undefined);
+	/** one entry per entry in columns; set means design mode is on, null means off */
+	readonly designInfo = input<DesignColumnInfo[]>(undefined);
+	readonly designHoverCardRef = viewChild<ElementRef<HTMLElement>>('designHoverCard');
+	/** the column being hovered right now, null when the card is not showing */
+	readonly designCard = signal<DesignColumnInfo>(null);
+
+	/**
+	 * designInfo arrives keyed by position in columns, because idForFoundset - and so the
+	 * generated colId - only exists on the client. Resolved here through getColumnID, the same
+	 * function that decides colDef.field, so the two cannot drift apart.
+	 */
+	readonly designInfoByColId = computed<{ [colId: string]: DesignColumnInfo }>(() => {
+		const info = this.designInfo();
+		if (!info) {
+			return null;
+		}
+
+		const columns = this.columns() ? this.columns() : [];
+		const byColId: { [colId: string]: DesignColumnInfo } = {};
+		for (let i = 0; i < columns.length; i++) {
+			if (!info[i]) {
+				continue;
+			}
+			const colId = columns[i].id ? columns[i].id : this.getColumnID(columns[i], i);
+			if (colId) {
+				byColId[colId] = info[i];
+			}
+		}
+		return byColId;
+	});
 	// used in HTML template to toggle sync button
 	isGroupView = false;
 
@@ -1145,6 +1188,14 @@ export class DataGrid extends NGGridDirective {
 			}
 		});
 
+		// design mode (field inspector). Delegated off the grid root on purpose: header cells are
+		// virtualised, so per-cell listeners would have to be reattached on every scroll.
+		this.agGridElementRef().nativeElement.addEventListener('mouseover', (e: MouseEvent) => this.onDesignHeaderHover(e));
+		this.agGridElementRef().nativeElement.addEventListener('mouseleave', () => {
+			this.designHoverColId = null;
+			this.hideDesignCard();
+		});
+
 		this.agGridElementRef().nativeElement.addEventListener('focus', (e: any) => {
 			const agGrid = this.agGrid();
 			if (agGrid.api) {
@@ -1236,6 +1287,14 @@ export class DataGrid extends NGGridDirective {
 				const change = changes[property];
 				const myFoundset = this.myFoundset();
 				switch (property) {
+					case 'designInfo':
+						// nothing to rebuild - the card reads designInfoByColId on hover. Only an
+						// already open card has to be taken down when design mode goes off.
+						if (!this.designInfo()) {
+							this.designHoverColId = null;
+							this.hideDesignCard();
+						}
+						break;
 					case 'responsiveHeight':
 						this.setHeight();
 						break;
@@ -3844,6 +3903,77 @@ export class DataGrid extends NGGridDirective {
 				this.headerTextChangeListeners[i]();
 			}
 			this.headerTextChangeListeners.splice(0, this.headerTextChangeListeners.length);
+		}
+	}
+
+	/**
+	 * Design mode (field inspector) - the card is shown on header hover.
+	 *
+	 * Deliberately not a custom headerComponent: replacing the header cell means reimplementing
+	 * sort, the filter icon, the column menu and the headerCheckbox template, all of which the
+	 * default component wires up itself through data-ref. One shared card costs none of that.
+	 */
+	private designHoverColId: string = null;
+
+	private onDesignHeaderHover(event: MouseEvent) {
+		const byColId = this.designInfoByColId();
+		// design mode off. First test on purpose, this runs for every mouseover in the grid
+		if (!byColId) {
+			return;
+		}
+
+		const target = event.target as HTMLElement;
+		const cell = target && target.closest ? target.closest('.ag-header-cell') : null;
+		const colId = cell ? cell.getAttribute('col-id') : null;
+
+		// mouseover also fires moving between the children of one header cell
+		if (colId === this.designHoverColId) {
+			return;
+		}
+		this.designHoverColId = colId;
+		this.showDesignCard(colId ? byColId[colId] : null, cell as HTMLElement);
+	}
+
+	private showDesignCard(info: DesignColumnInfo, anchor: HTMLElement) {
+		const card = this.designHoverCardRef() ? this.designHoverCardRef().nativeElement : null;
+		if (!card) {
+			return;
+		}
+
+		this.designCard.set(info ? info : null);
+		if (!info || !anchor) {
+			this.hideDesignCard();
+			return;
+		}
+
+		// the content comes from the signal just set, and this component is OnPush - it has to be
+		// in the DOM before offsetWidth/offsetHeight can place the card
+		this.cdRef.detectChanges();
+
+		// already open is the normal case when moving between header cells - it only has to move
+		if (!card.matches(':popover-open')) {
+			card.showPopover();
+		}
+
+		// the popover is in the top layer, so no ancestor overflow clips it - but that layer is
+		// positioned against the viewport, which is why this cannot be done in CSS. Right aligned
+		// under the header cell, flipped or clamped at the edges: the globiscomponents rules.
+		const rect = anchor.getBoundingClientRect();
+		const left = Math.max(DESIGN_HOVER_GAP, Math.min(rect.right - card.offsetWidth,
+			window.innerWidth - card.offsetWidth - DESIGN_HOVER_GAP));
+		const below = rect.bottom + DESIGN_HOVER_GAP;
+		const top = below + card.offsetHeight > window.innerHeight
+			? Math.max(DESIGN_HOVER_GAP, rect.top - card.offsetHeight - DESIGN_HOVER_GAP)
+			: below;
+
+		card.style.left = left + 'px';
+		card.style.top = top + 'px';
+	}
+
+	private hideDesignCard() {
+		const card = this.designHoverCardRef() ? this.designHoverCardRef().nativeElement : null;
+		if (card && card.matches(':popover-open')) {
+			card.hidePopover();
 		}
 	}
 

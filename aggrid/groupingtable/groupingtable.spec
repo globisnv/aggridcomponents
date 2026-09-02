@@ -21,6 +21,7 @@
 		"columns": { "type": "column[]", "droppable" : true, "pushToServer": "shallow", "tags": {"wizard": "autoshow", "allowaccess": "enabled", "doc": "List all columns to be used in table as dataprovider", "basic": true}},
 		"columnState": { "type": "string", "tags": {"scope" : "private", "allowaccess": "enabled"}, "pushToServer": "allow"},
 		"columnStateOnError": { "type": "function", "tags": {"scope" : "private", "allowaccess": "enabled"}},
+		"designInfo": { "type": "object", "pushToServer": "reject", "tags": {"allowaccess": "enabled", "doc": "Design mode (field inspector) metadata, one entry per entry in columns. Present means design mode is on, null means off. Set from Servoy, never at design time."}},
 		"_internalAutoSizeState": { "type": "boolean", "tags": {"scope" : "private", "allowaccess": "enabled"}, "pushToServer": "allow"},
 		"_internalSizeColumnsToFitState": { "type": "boolean", "tags": {"scope" : "private", "allowaccess": "enabled"}, "pushToServer": "allow"},
 		"_internalColumnState": { "type": "string", "tags": {"scope" : "private", "allowaccess": "enabled"}, "pushToServer": "allow"},

@@ -11,4 +11,23 @@
       <i [class]="getIconRefreshData()" (click)="purge()"></i>
     </span>
   }
+  <!-- design mode (field inspector). popover puts it in the top layer, so neither the header
+       row nor any tabpanel overflow can clip it; the classes are the globiscomponents ones so
+       the card looks identical to the ones on fields. Position is set in showDesignCard(). -->
+  <div #designHoverCard class="design-hover" popover="manual">
+    @if (designCard(); as card) {
+      <div class="design-hover-head">{{ card.dataprovider }}</div>
+      @if (card.rows && card.rows.length) {
+        <dl class="design-hover-rows">
+          @for (row of card.rows; track $index) {
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          }
+        </dl>
+      }
+      @if (card.description) {
+        <div class="design-hover-note">{{ card.description }}</div>
+      }
+    }
+  </div>
 </div>
