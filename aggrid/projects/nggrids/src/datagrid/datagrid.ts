@@ -207,6 +207,8 @@ export class DataGrid extends NGGridDirective {
 	readonly designHoverCardRef = viewChild<ElementRef<HTMLElement>>('designHoverCard');
 	/** the column being hovered right now, null when the card is not showing */
 	readonly designCard = signal<DesignColumnInfo>(null);
+	/** label of the row copied last, so only that row's button shows the check */
+	readonly designCopied = signal<string>(null);
 
 	/**
 	 * designInfo arrives keyed by position in columns, because idForFoundset - and so the
@@ -1191,7 +1193,13 @@ export class DataGrid extends NGGridDirective {
 		// design mode (field inspector). Delegated off the grid root on purpose: header cells are
 		// virtualised, so per-cell listeners would have to be reattached on every scroll.
 		this.agGridElementRef().nativeElement.addEventListener('mouseover', (e: MouseEvent) => this.onDesignHeaderHover(e));
-		this.agGridElementRef().nativeElement.addEventListener('mouseleave', () => {
+		this.agGridElementRef().nativeElement.addEventListener('mouseleave', (e: MouseEvent) => {
+			// the card is a sibling of the grid, so reaching its copy buttons means leaving the
+			// grid - that is not a reason to close it, onDesignCardLeave handles that
+			const card = this.designHoverCardRef() ? this.designHoverCardRef().nativeElement : null;
+			if (card && e.relatedTarget instanceof Node && card.contains(e.relatedTarget)) {
+				return;
+			}
 			this.designHoverColId = null;
 			this.hideDesignCard();
 		});
@@ -3968,6 +3976,23 @@ export class DataGrid extends NGGridDirective {
 
 		card.style.left = left + 'px';
 		card.style.top = top + 'px';
+	}
+
+	/** the card is not inside the grid element, so leaving it needs a hide of its own */
+	onDesignCardLeave() {
+		this.designHoverColId = null;
+		this.hideDesignCard();
+	}
+
+	/** the card markup is shared with globiscomponents, so this matches GlobisDesignHover.copy */
+	copyDesignRow(row: { label: string; value: string }) {
+		// short-circuits whole when clipboard is undefined, which it is outside a secure context
+		navigator.clipboard?.writeText(row.value)
+			.then(() => {
+				this.designCopied.set(row.label);
+				setTimeout(() => this.designCopied.set(null), 1500);
+			})
+			.catch(() => { /* denied by the browser */ });
 	}
 
 	private hideDesignCard() {
