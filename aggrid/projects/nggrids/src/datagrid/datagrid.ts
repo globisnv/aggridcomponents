@@ -13,7 +13,9 @@ import { DatePicker } from '../editors/datepicker';
 import { FormEditor } from '../editors/formeditor';
 import { SelectEditor } from '../editors/selecteditor';
 import { TextEditor } from '../editors/texteditor';
+import { TimeEditor } from '../editors/timeeditor';
 import { TypeaheadEditor } from '../editors/typeaheadeditor';
+import { isTimeFormat, toHHmm } from '../time-minutes';
 import { RadioFilter } from '../filters/radiofilter';
 import { ValuelistFilter } from '../filters/valuelistfilter';
 import { ColumnsAutoSizingOn, DragTransferData, GRID_EVENT_TYPES, IconConfig, JSDNDEvent, MainMenuItemsConfig, NGGridDirective, ToolPanelConfig } from '../nggrid';
@@ -24,6 +26,7 @@ import { CustomTooltip } from './commons/tooltip';
 import { isEqualWith } from 'lodash-es';
 import { RegistrationService } from './commons/registration.service';
 import { DateFilter } from '../filters/datefilter';
+import { TimeFilter } from '../filters/timefilter';
 
 const TABLE_PROPERTIES_DEFAULTS = {
 	rowHeight: { gridOptionsProperty: 'rowHeight', default: 25 },
@@ -906,7 +909,8 @@ export class DataGrid extends NGGridDirective {
 			components: {
 				valuelistFilter: ValuelistFilter,
 				radioFilter: RadioFilter,
-				dateFilter: DateFilter
+				dateFilter: DateFilter,
+				timeFilter: TimeFilter
 			}
 		} as GridOptions;
 
@@ -1600,6 +1604,9 @@ export class DataGrid extends NGGridDirective {
 			const dataGrid = params.context.componentParent;
 			const column = dataGrid.getColumn(params.column.colId);
 
+			if (isTimeFormat(column?.format)) {
+				return toHHmm(value) ?? '';
+			}
 			if (column && !column.valuelist && column.format) {
 				value = dataGrid.format(value, column.format, false);
 			}
@@ -1880,6 +1887,8 @@ export class DataGrid extends NGGridDirective {
 				} else if (column.editType === 'DATEPICKER') {
 					colDef.cellEditor = DatePicker;
 					colDef.cellEditorPopupPosition = 'over';
+				} else if (column.editType === 'TIMEFIELD') {
+					colDef.cellEditor = TimeEditor;
 				} else if (column.editType === 'COMBOBOX') {
 					colDef.cellEditor = SelectEditor;
 				} else if (column.editType === 'FORM') {
@@ -1916,6 +1925,10 @@ export class DataGrid extends NGGridDirective {
 					colDef.filter = 'agTextColumnFilter';
 				} else if (column.filterType === 'NUMBER') {
 					colDef.filter = 'agNumberColumnFilter';
+				} else if (column.filterType === 'TIME') {
+					colDef.filter = 'timeFilter';
+					colDef.filterParams['suppressAndOrCondition'] = true;
+					if (!this.servoyApi.isInDesigner()) colDef.floatingFilterComponent = 'timeFilter';
 				} else if (column.filterType === 'DATE') {
 					//colDef.filter = 'agDateColumnFilter';
 					colDef.filter = 'dateFilter';

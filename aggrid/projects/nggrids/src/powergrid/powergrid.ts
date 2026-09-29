@@ -6,6 +6,8 @@ import { ColumnsAutoSizingOn, DragTransferData, GRID_EVENT_TYPES, IconConfig, JS
 import { DatePicker } from '../editors/datepicker';
 import { FormEditor } from '../editors/formeditor';
 import { TextEditor } from '../editors/texteditor';
+import { TimeEditor } from '../editors/timeeditor';
+import { isTimeFormat, toHHmm } from '../time-minutes';
 import { DomSanitizer } from '@angular/platform-browser';
 
 import { CustomTooltip } from '../datagrid/commons/tooltip';
@@ -15,6 +17,7 @@ import { TypeaheadEditor } from '../editors/typeaheadeditor';
 import { ValuelistFilter } from '../filters/valuelistfilter';
 import { RadioFilter } from '../filters/radiofilter';
 import { DateFilter } from '../filters/datefilter';
+import { TimeFilter } from '../filters/timefilter';
 import { NgbTypeaheadConfig } from '@ng-bootstrap/ng-bootstrap';
 import { RegistrationService } from '../datagrid/commons/registration.service';
 
@@ -524,7 +527,8 @@ export class PowerGrid extends NGGridDirective {
             components: {
                 valuelistFilter: ValuelistFilter,
                 radioFilter: RadioFilter,
-                dateFilter: DateFilter
+                dateFilter: DateFilter,
+                timeFilter: TimeFilter
             }
         };
 
@@ -1053,7 +1057,9 @@ export class PowerGrid extends NGGridDirective {
                 if (!enabled || column.enableSort === false) colDef.sortable = false;
                 // visibility
                 if (column.visible === false) colDef.hide = true;
-                if (column.format) {
+                if (isTimeFormat(column.format)) {
+                    colDef.valueFormatter = (params: any) => toHHmm(params.value) ?? '';
+                } else if (column.format) {
                     if (column.formatType === 'DATETIME' && column.format.useLocalDateTime) {
                         colDef.valueGetter = (params: any) => {
                             const field = params.colDef.field;
@@ -1102,6 +1108,10 @@ export class PowerGrid extends NGGridDirective {
                         colDef.filter = 'agTextColumnFilter';
                     } else if (column.filterType === 'NUMBER') {
                         colDef.filter = 'agNumberColumnFilter';
+                    } else if (column.filterType === 'TIME') {
+                        colDef.filter = 'timeFilter';
+                        colDef.filterParams['suppressAndOrCondition'] = true;
+                        if(!this.servoyApi.isInDesigner()) colDef.floatingFilterComponent = 'timeFilter';
                     } else if (column.filterType === 'DATE') {
                         //colDef.filter = 'agDateColumnFilter';
                         colDef.filter = 'dateFilter';
@@ -1126,6 +1136,8 @@ export class PowerGrid extends NGGridDirective {
                     } else if (column.editType === 'DATEPICKER') {
                         colDef.cellEditor = DatePicker;
                         colDef.cellEditorPopupPosition = 'over';
+                    } else if (column.editType === 'TIMEFIELD') {
+                        colDef.cellEditor = TimeEditor;
                     } else if (column.editType === 'COMBOBOX') {
                         colDef.cellEditor = SelectEditor;
                     } else if (column.editType === 'TYPEAHEAD') {

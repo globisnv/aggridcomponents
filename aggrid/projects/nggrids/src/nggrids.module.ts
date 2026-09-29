@@ -7,6 +7,7 @@ import { DatePicker } from './editors/datepicker';
 import { FormEditor } from './editors/formeditor';
 import { SelectEditor } from './editors/selecteditor';
 import { TextEditor } from './editors/texteditor';
+import { TimeEditor } from './editors/timeeditor';
 import { TypeaheadEditor } from './editors/typeaheadeditor';
 import { AgGridModule } from 'ag-grid-angular';
 import { ValuelistFilter } from './filters/valuelistfilter';
@@ -16,18 +17,21 @@ import { BlankLoadingCellRendrer } from './datagrid/renderers/blankloadingcellre
 import { FormsModule } from '@angular/forms';
 import { IconConfig, MainMenuItemsConfig, ToolPanelConfig } from './nggrid';
 import { DateFilter } from './filters/datefilter';
+import { TimeFilter } from './filters/timefilter';
 
 @NgModule({
     declarations: [
         DataGrid,
         TextEditor,
         DatePicker,
+        TimeEditor,
         FormEditor,
         SelectEditor,
         TypeaheadEditor,
         ValuelistFilter,
         RadioFilter,
         DateFilter,
+        TimeFilter,
         BlankLoadingCellRendrer,
         PowerGrid
     ],
