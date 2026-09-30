@@ -1,7 +1,8 @@
+/// <reference path="./typings.d.ts" />
 import { AgGridAngular } from 'ag-grid-angular';
 import { GridOptions } from 'ag-grid-community';
-import { ChangeDetectorRef, Directive, ElementRef, TemplateRef, input, contentChild, viewChild, signal } from '@angular/core';
-import { Deferred, BaseCustomObject, Format, FormattingService, LoggerService, ServoyBaseComponent, JSEvent, IJSMenu, IJSMenuItem, PopupStateService, SabloTabseq } from '@servoy/public';
+import { Directive, ElementRef, TemplateRef, input, contentChild, viewChild, signal } from '@angular/core';
+import { Deferred, Format, FormattingService, LoggerService, ServoyBaseComponent, JSEvent, IJSMenu, IJSMenuItem, PopupStateService, SabloTabseq } from '@servoy/public';
 import { Options } from '@eonasdan/tempus-dominus';
 
 export const GRID_EVENT_TYPES = {
@@ -24,10 +25,10 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
     readonly agGridElementRef = viewChild('element', { read: ElementRef });
     readonly sabloTabseqDirective = viewChild('element', { read: SabloTabseq });
 
-    readonly enableBrowserContextMenu = input<boolean>(undefined);
+    readonly enableBrowserContextMenu = input<boolean>(undefined!);
     readonly arrowsUpDownMoveWhenEditing = input<any>(undefined);
-    readonly editNextCellOnEnter = input<boolean>(undefined);
-    readonly moveToNextEditableCellOnTab = input<boolean>(undefined);
+    readonly editNextCellOnEnter = input<boolean>(undefined!);
+    readonly moveToNextEditableCellOnTab = input<boolean>(undefined!);
     readonly _internalFormEditorValue = input<any>(undefined);
     readonly onDragOverFunc = input<any>(undefined);
     readonly onDragGetImageFunc = input<any>(undefined);
@@ -35,28 +36,27 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
     readonly onDrop = input<any>(undefined);
     readonly onColumnFormEditStarted = input<any>(undefined);
 
-    readonly responsiveHeight = input<number>(undefined);
-    readonly customMainMenu = input<IJSMenu>(undefined);
+    readonly responsiveHeight = input<number>(undefined!);
+    readonly customMainMenu = input<IJSMenu>(undefined!);
 
-    readonly onCustomMainMenuAction = input<(menuItemName: string, colId: string) => void>(undefined);
+    readonly onCustomMainMenuAction = input<(menuItemName: string, colId: string) => void>(undefined!);
 
     __internalFormEditorValue = signal<any>(undefined);
 
-    doc: Document;
+    doc!: Document;
 
-    agGridOptions: GridOptions;
-    cdRef: ChangeDetectorRef;
-    formattingService: FormattingService;
+    agGridOptions!: GridOptions;
+    formattingService!: FormattingService;
     selectionEvent: any;
-    log: LoggerService;
+    log!: LoggerService;
 
-    dragViewport: HTMLElement
-    dragViewportRect: DOMRect;
-    dragViewportHorizontalScrollViewport: HTMLElement;
+    dragViewport!: HTMLElement
+    dragViewportRect!: DOMRect;
+    dragViewportHorizontalScrollViewport!: HTMLElement;
     dragViewportScrollThreshold = 20;
     dragViewportScrollSpeed = 10;
     dragViewportScrollInterval: any;
-    dragScrollDirection: string;
+    dragScrollDirection!: string;
 
     dragOverTargetColumn: Element | null = null;
     dragOverTargetColumnClassName: string | null = null;
@@ -64,45 +64,49 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
 
     private destroyed = false;
 
-    protected popupStateService: PopupStateService
-    private popupParent: HTMLElement;
-    private popupParentObserver: MutationObserver;
+    protected popupStateService!: PopupStateService
+    private popupParent!: HTMLElement;
+    private popupParentObserver!: MutationObserver;
 
     svyOnInit() {
         super.svyOnInit();
-        if (!this.servoyApi.isInDesigner()) {
+        if (!this.servoyApi().isInDesigner()) {
             this.__internalFormEditorValue.set(this._internalFormEditorValue());
-            let mainWindowContainer = this.agGridElementRef().nativeElement.closest('.svy-main-window-container');
-            if (!mainWindowContainer) {
-                mainWindowContainer = this.agGridElementRef().nativeElement.closest('.svy-dialog');
+
+            if (!this.enableBrowserContextMenu()) {
+                this.agGridElementRef()!.nativeElement.addEventListener('contextmenu', (e: any) => {
+                    e.preventDefault();
+                });
             }
-            this.popupParent = mainWindowContainer ? mainWindowContainer : this.agGridElementRef().nativeElement;
-            this.agGrid().api.setGridOption('popupParent', this.popupParent);
+        }
+    }
+
+    protected onGridReadyBase() {
+        if (!this.servoyApi().isInDesigner()) {
+            let mainWindowContainer = this.agGridElementRef()!.nativeElement.closest('.svy-main-window-container');
+            if (!mainWindowContainer) {
+                mainWindowContainer = this.agGridElementRef()!.nativeElement.closest('.svy-dialog');
+            }
+            this.popupParent = mainWindowContainer ? mainWindowContainer : this.agGridElementRef()!.nativeElement;
+            this.agGrid()!.api.setGridOption('popupParent', this.popupParent);
             this.popupParentObserver = new MutationObserver((mutations) => {
                 mutations.forEach(mutation => {
                     // Added nodes
                     mutation.addedNodes.forEach(node => {
                         if (node instanceof HTMLElement && (node.classList.contains('ag-popup') /*|| node.classList.contains('ag-custom-component-popup')*/)) {
-                            this.popupStateService.activatePopup(this.agGridElementRef().nativeElement.parentNode.id);
+                            this.popupStateService.activatePopup(this.agGridElementRef()!.nativeElement.parentNode!.id);
                         }
                     });
                     // Removed nodes
                     mutation.removedNodes.forEach(node => {
                         if (node instanceof HTMLElement && (node.classList.contains('ag-popup') /*|| node.classList.contains('ag-custom-component-popup')*/)) {
-                            this.popupStateService.deactivatePopup(this.agGridElementRef().nativeElement.parentNode.id);
+                            this.popupStateService.deactivatePopup(this.agGridElementRef()!.nativeElement.parentNode!.id);
                         }
                     });
                 });
             });
 
             this.popupParentObserver.observe(this.popupParent, { childList: true, subtree: false });
-            //this.popupParentObserver.observe(this.doc.body, { childList: true, subtree: false });
-
-            if (!this.enableBrowserContextMenu()) {
-                this.agGridElementRef().nativeElement.addEventListener('contextmenu', (e: any) => {
-                    e.preventDefault();
-                });
-            }
         }
     }
 
@@ -110,7 +114,7 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
         this.cancelDragViewportScroll();
         if (this.popupParentObserver) this.popupParentObserver.disconnect();
         const agGrid = this.agGrid();
-        if (!agGrid.api.isDestroyed()) agGrid.api.destroy();
+        if (agGrid?.api && !agGrid.api.isDestroyed()) agGrid.api.destroy();
         this.destroyed = true;
     }
 
@@ -129,19 +133,27 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
         }
     }
 
-    handleDragViewportScroll($event) {
-        if (!this.dragViewport) {
-            this.dragViewport = $event.currentTarget.getElementsByClassName("ag-body-viewport")[0] as HTMLElement;
-            this.dragViewportHorizontalScrollViewport = $event.currentTarget.getElementsByClassName("ag-body-horizontal-scroll-viewport")[0] as HTMLElement;
-
-            this.dragViewportRect = this.dragViewport.getBoundingClientRect();
+    handleDragViewportScroll($event: any) {
+        if (!this.dragViewport || !this.dragViewportRect) {
+            const container = $event?.currentTarget as HTMLElement;
+            if (!container?.getElementsByClassName) {
+                return;
+            }
+            // AG Grid 36: .ag-grid-viewport is the body scroll container (overflow:auto, both axes)
+            const viewport = container.getElementsByClassName('ag-grid-viewport')[0] as HTMLElement;
+            if (!viewport) {
+                return;
+            }
+            this.dragViewport = viewport;
+            this.dragViewportHorizontalScrollViewport = viewport;
+            this.dragViewportRect = viewport.getBoundingClientRect();
         }
         const clientX = $event.clientX - this.dragViewportRect.left;
         const clientY = $event.clientY - this.dragViewportRect.top;
         const containerWidth = this.dragViewportRect.width;
         const containerHeight = this.dragViewportRect.height;
 
-        this.dragScrollDirection = null;
+        this.dragScrollDirection = null!;
         if (clientX < this.dragViewportScrollThreshold) {
             this.dragScrollDirection = 'left';
         } else if (clientX > containerWidth - this.dragViewportScrollThreshold) {
@@ -156,16 +168,16 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
                 if (this.dragScrollDirection) {
                     switch (this.dragScrollDirection) {
                         case 'left':
-                            this.dragViewportHorizontalScrollViewport.scrollBy({ left: -this.dragViewportScrollSpeed, top: 0 });
+                            this.dragViewportHorizontalScrollViewport?.scrollBy({ left: -this.dragViewportScrollSpeed, top: 0 });
                             break;
                         case 'right':
-                            this.dragViewportHorizontalScrollViewport.scrollBy({ left: this.dragViewportScrollSpeed, top: 0 });
+                            this.dragViewportHorizontalScrollViewport?.scrollBy({ left: this.dragViewportScrollSpeed, top: 0 });
                             break;
                         case 'up':
-                            this.dragViewport.scrollBy({ left: 0, top: -this.dragViewportScrollSpeed });
+                            this.dragViewport?.scrollBy({ left: 0, top: -this.dragViewportScrollSpeed });
                             break;
                         case 'down':
-                            this.dragViewport.scrollBy({ left: 0, top: this.dragViewportScrollSpeed });
+                            this.dragViewport?.scrollBy({ left: 0, top: this.dragViewportScrollSpeed });
                             break;
                     }
                 } else {
@@ -181,10 +193,10 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
             clearInterval(this.dragViewportScrollInterval);
         }
         this.dragViewportScrollInterval = null;
-        this.dragViewport = null;
-        this.dragViewportRect = null;
-        this.dragViewportHorizontalScrollViewport = null;
-        this.dragScrollDirection = null;
+        this.dragViewport = null!;
+        this.dragViewportRect = null!;
+        this.dragViewportHorizontalScrollViewport = null!;
+        this.dragScrollDirection = null!;
     }
 
     restoreDragOverTargetColumn() {
@@ -196,7 +208,7 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
         this.lastDragOverResult = false;
     }
 
-    gridDragEnd($event) {
+    gridDragEnd($event: any) {
         this.cancelDragViewportScroll();
         this.restoreDragOverTargetColumn();
         if (this.onDragGetImageFunc()) {
@@ -208,39 +220,53 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
     }
 
     setHeight() {
-        if (!this.servoyApi.isInAbsoluteLayout()) {
-            if (this.responsiveHeight() < 0) {
-                const agGridElementRef = this.agGridElementRef();
-                if (agGridElementRef) agGridElementRef.nativeElement.style.height = '';
-                const agGrid = this.agGrid();
-                if (agGrid?.api) {
-                    agGrid.api.setGridOption('domLayout', 'autoHeight');
-                } else {
-                    this.agGridOptions.domLayout = 'autoHeight';
-                }
+        if (this.servoyApi().isInAbsoluteLayout()) {
+            return;
+        }
+        const agGrid = this.agGrid();
+        if (agGrid?.api) {
+            // live grid: defer the DOM/style mutation out of the current change-detection pass
+            // to avoid ExpressionChangedAfterItHasBeenChecked (NG0100) when called from svyOnChanges.
+            this.setTimeout(() => this.applyHeight(), 0);
+        } else {
+            // init-time: no API yet, only mutates the plain agGridOptions config object.
+            // apply synchronously so the grid is created with the correct domLayout/height.
+            this.applyHeight();
+        }
+    }
+
+    private applyHeight() {
+        if (this.responsiveHeight()! < 0) {
+            const agGridElementRef = this.agGridElementRef();
+            if (agGridElementRef) agGridElementRef.nativeElement.style.height = '';
+            const agGrid = this.agGrid();
+            if (agGrid?.api) {
+                agGrid.api.setGridOption('domLayout', 'autoHeight');
+            } else if (this.agGridOptions) {
+                this.agGridOptions.domLayout = 'autoHeight';
             }
-            else {
-                const agGrid = this.agGrid();
-                if (agGrid?.api) {
-                    agGrid.api.setGridOption('domLayout', 'normal');
+        }
+        else {
+            const agGrid = this.agGrid();
+            if (agGrid?.api) {
+                agGrid.api.setGridOption('domLayout', 'normal');
+            } else if (this.agGridOptions) {
+                this.agGridOptions.domLayout = 'normal';
+            }
+            const agGridElementRef = this.agGridElementRef();
+            if (agGridElementRef) {
+                const responsiveHeight = this.responsiveHeight();
+                if (responsiveHeight) {
+                    agGridElementRef.nativeElement.style.height = responsiveHeight + 'px';
                 } else {
-                    this.agGridOptions.domLayout = 'normal';
-                }
-                const agGridElementRef = this.agGridElementRef();
-                if (agGridElementRef) {
-                    const responsiveHeight = this.responsiveHeight();
-                    if (responsiveHeight) {
-                        agGridElementRef.nativeElement.style.height = responsiveHeight + 'px';
-                    } else {
-                        // when responsive height is 0 or undefined, use 100% of the parent container.
-                        agGridElementRef.nativeElement.style.height = '100%';
-                    }
+                    // when responsive height is 0 or undefined, use 100% of the parent container.
+                    agGridElementRef.nativeElement.style.height = '100%';
                 }
             }
         }
     }
 
-    getDataTarget(event): any {
+    getDataTarget(event: any): any {
         const dataTarget = event.target.closest('[data-target]');
         if (dataTarget) {
             return dataTarget.getAttribute('data-target');
@@ -249,7 +275,7 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
     }
 
     loadCalendarLocale(config: Options): Deferred<any> {
-        const locale = config.localization.locale;
+        const locale = config.localization!.locale!;
         const localeDefer = new Deferred();
         const index = locale.indexOf('-');
         let language = locale.toLowerCase();
@@ -258,9 +284,9 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
         }
         const moduleLoader = (module: { default: { localization: { [key: string]: string | number } } }) => {
             const copy = Object.assign({}, module.default.localization);
-            copy.startOfTheWeek = config.localization.startOfTheWeek;
-            copy.hourCycle = config.localization.hourCycle;
-            config.localization = copy;
+            copy.startOfTheWeek = config.localization!.startOfTheWeek as any;
+            copy.hourCycle = config.localization!.hourCycle as any;
+            config.localization = copy as any;
             localeDefer.resolve(locale);
         }
         const errorHandler = () => {
@@ -293,14 +319,14 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
 
     createCustomMainMenuItems(menuItems: any[], customMainMenu: any, column: any, colId: string): any[] {
         customMainMenu.items.forEach((item: IJSMenuItem) => {
-            let hideForColIds: string[] = typeof item.extraProperties['NG-Grids']['hideForColIds'] === 'string' && item.extraProperties['NG-Grids']['hideForColIds'].trim().length > 0 ? item.extraProperties['NG-Grids']['hideForColIds'].split(',') : [];
-            let showForColIds: string[] = typeof item.extraProperties['NG-Grids']['showForColIds'] === 'string' && item.extraProperties['NG-Grids']['showForColIds'].trim().length > 0 ? item.extraProperties['NG-Grids']['showForColIds'].split(',') : [];
+            let hideForColIds: string[] = typeof (item.extraProperties as any)['NG-Grids']['hideForColIds'] === 'string' && (item.extraProperties as any)['NG-Grids']['hideForColIds'].trim().length > 0 ? (item.extraProperties as any)['NG-Grids']['hideForColIds'].split(',') : [];
+            let showForColIds: string[] = typeof (item.extraProperties as any)['NG-Grids']['showForColIds'] === 'string' && (item.extraProperties as any)['NG-Grids']['showForColIds'].trim().length > 0 ? (item.extraProperties as any)['NG-Grids']['showForColIds'].split(',') : [];
             if ((!column.id && showForColIds.length === 0) || ((hideForColIds.length === 0 || hideForColIds.indexOf(column.id) === -1) &&
                 (showForColIds.length === 0 || showForColIds.indexOf(column.id) !== -1))) {
-                if (item.extraProperties['NG-Grids']['isSeparator']) {
+                if ((item.extraProperties as any)['NG-Grids']['isSeparator']) {
                     menuItems.push('separator');
-                } else if (item.extraProperties['NG-Grids']['agGridMenuItem']) {
-                    menuItems.push(item.extraProperties['NG-Grids']['agGridMenuItem']);
+                } else if ((item.extraProperties as any)['NG-Grids']['agGridMenuItem']) {
+                    menuItems.push((item.extraProperties as any)['NG-Grids']['agGridMenuItem']);
                 } else {
                     menuItems.push({
                         name: item.menuText,
@@ -339,16 +365,16 @@ export abstract class NGGridDirective extends ServoyBaseComponent<HTMLDivElement
     abstract hasValuelistResolvedDisplayData(): boolean;
 }
 
-export class IconConfig extends BaseCustomObject {
+export interface IconConfig {
 }
 
-export class ToolPanelConfig extends BaseCustomObject {
+export interface ToolPanelConfig {
 }
 
-export class MainMenuItemsConfig extends BaseCustomObject {
+export interface MainMenuItemsConfig {
 }
 
-export class ColumnsAutoSizingOn extends BaseCustomObject {
+export interface ColumnsAutoSizingOn {
 }
 
 export class DragTransferData {
@@ -357,7 +383,7 @@ export class DragTransferData {
 }
 
 export class JSDNDEvent extends JSEvent {
-    targetColumnId: string;
-    sourceColumnId: string;
-    sourceGridName: string;
+    targetColumnId!: string;
+    sourceColumnId!: string;
+    sourceGridName!: string;
 }

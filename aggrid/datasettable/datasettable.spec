@@ -18,6 +18,7 @@
     },
 	"model":
 	{
+		"designsize" : {"type" :"dimension", "tags": {"serveronly": true, "scope": "private"}, "default" : {"width":400, "height":300}},
 		"data": { "type": "object[]", "tags": {"scope" : "private"}, "pushToServer": "allow"},
 		"pks": { "type": "string[]", "tags": {"scope" : "private"}},
 		"updateData": { "type": "object", "tags": {"scope" : "private"}},
@@ -28,7 +29,7 @@
 		"_internalFilterModel": { "type": "object", "tags": {"scope" : "private", "allowaccess": "enabled"}, "pushToServer": "allow"},
 		"responsiveHeight": { "type": "int", "default": 300, "tags": {"doc": "Table's height to be set in a responsive form. When responsiveHeight is set to 0, the table will use 100% height of the parent container. When responsiveHeight is set to -1, the table will auto-size it's height to the number of rows displayed inside the grid - in this case there is no vertical scrollbar and all rows are rendered"} },
 		"rowHeight" : {"type" : "int", "default": 25, "tags": {"scope": "design", "doc": "The height in pixels of the table's rows"}},
-		"rowStyleClassFunc": { "type": "clientfunction", "tags": {"doc": "Function to add style class to row"}},
+		"rowStyleClassFunc": { "type": "clientfunction", "tags": {"doc": "Function to add style class to row. Parameters: rowIndex, rowData, event, isGroup, params (AG Grid RowClassParams — includes node, api, context)"}},
 		"styleClass": { "type": "styleclass", "default" : "ag-theme-alpine"},
 		"visible": "visible",
 		"enableColumnResize": { "type": "boolean", "default": true, "tags": {"scope": "design"}},
@@ -68,7 +69,7 @@
 	},
 	"handlers" : {
 		"onRowSelected": {
-			"doc": "Called when the mouse is clicked on a row/cell",
+			"doc": "Called when a row is selected or deselected",
 			"parameters": [{
 				"name": "rowData",
 				"type": "object"
@@ -531,6 +532,7 @@
 			"footerStyleClass" : {"type" : "styleclass"},
 			"headerGroup": {"type" : "tagstring", "tags": {"doc": "Header group, that this column will be part of"}},
 			"headerGroupStyleClass" : {"type" : "styleclass"},
+			"headerGroupKeepColumnsTogether": {"type": "boolean", "default": false, "tags": {"doc": "Group-level flag, read from the first column that establishes the header group. When true, keeps the columns of the header group together so an end user can reorder the whole group but cannot drag an individual column out of it (maps to AG Grid marryChildren). Its value on later member columns is ignored."}},
 			"headerTitle": {"type" : "tagstring", "tags": { "basic": true, "useAsCaptionInDeveloper" : true, "captionPriority" : 1, "showInOutlineView": true }},
 			"headerStyleClass" : {"type" : "styleclass"},
 			"headerIconStyleClass" : {"type" : "styleclass", "tags": {"doc": "(Font awesome) Styles for header icon"}},

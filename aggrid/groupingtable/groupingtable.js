@@ -390,18 +390,21 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 							sortHandlerPromises.push(sortHandlerPromise);
 							sortHandlerPromise.then(
 								function(){
-									// success
-									if(sortHandlerPromises.shift() != sortHandlerPromise) {
-										$log.error('sortHandlerPromises out of sync');
-									}
+									removeSortHandlerPromise(sortHandlerPromise);
 								},
 								function(){
-									// fail
-									if(sortHandlerPromises.shift() != sortHandlerPromise) {
-										$log.error('sortHandlerPromises out of sync');
-									}
+									removeSortHandlerPromise(sortHandlerPromise);
 								}
 							);
+						}
+					}
+
+					function removeSortHandlerPromise(sortHandlerPromise) {
+						var idx = sortHandlerPromises.indexOf(sortHandlerPromise);
+						if(idx === -1) {
+							$log.error('sortHandlerPromises out of sync');
+						} else {
+							sortHandlerPromises.splice(idx, 1);
 						}
 					}
 
@@ -731,14 +734,16 @@ angular.module('aggridGroupingtable', ['webSocketModule', 'servoy']).directive('
 							}
 						},
 						onFilterChanged: storeColumnsState,
-						onSortChanged: function() {
+						onSortChanged: function(event) {
 							storeColumnsState();
 							if(isTableGrouped()) {
 								removeAllFoundsetRef = true;
 								gridOptions.api.purgeServerSideCache();
 							}
-							if($scope.handlers.onSort) {
-								onSortHandler();
+							if(event && (event.source === 'uiColumnSorted' || event.source === 'columnMenu')) {
+								if($scope.handlers.onSort) {
+									onSortHandler();
+								}
 							}
 						},
 	//	                onColumnVisible: storeColumnsState,			 covered by onDisplayedColumnsChanged
@@ -6076,6 +6081,7 @@ var sortColumns = [];
 								if(!colGroups[column.headerGroup]) {
 									colGroups[column.headerGroup] = {}
 									colGroups[column.headerGroup]['headerClass'] = column.headerGroupStyleClass;
+									colGroups[column.headerGroup]['marryChildren'] = column.headerGroupKeepColumnsTogether;
 									colGroups[column.headerGroup]['children'] = [];
 		
 								}
@@ -6090,6 +6096,7 @@ var sortColumns = [];
 							var group = {};
 							group.headerName = groupName;
 							group.headerClass = colGroups[groupName]['headerClass']; 
+							group.marryChildren = colGroups[groupName]['marryChildren'];
 							group.children = colGroups[groupName]['children'];
 							colDefs.push(group);
 						}
