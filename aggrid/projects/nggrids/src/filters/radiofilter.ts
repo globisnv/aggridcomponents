@@ -141,12 +141,12 @@ export class RadioFilter extends FilterDirective {
       if (clickedValue === previousValue) {
         event.target.checked = false;
         if (suffix) {
-          for (const nativeRadio of this.element1Ref().nativeElement.children) {
+          for (const nativeRadio of this.element1Ref()!.nativeElement.children) {
             nativeRadio.children[0].checked = false;
           }
           this._lastSecondFilterValue = null;
         } else {
-          for (const nativeRadio of this.elementRef().nativeElement.children) {
+          for (const nativeRadio of this.elementRef()!.nativeElement.children) {
             nativeRadio.children[0].checked = false;
           }
           this._lastFilterValue = null;

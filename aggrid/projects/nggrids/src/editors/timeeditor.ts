@@ -14,18 +14,18 @@ import { createTimeMaskFormat, parseMaskedTime, toHHmm } from '../time-minutes';
         'style': 'width: 100%; height: 100%;'
     },
     changeDetection: ChangeDetectionStrategy.OnPush,
-    standalone: false
+    standalone: true
 })
 export class TimeEditor extends EditorDirective {
 
-    private mask: MaskFormat;
+    private mask?: MaskFormat;
 
     constructor(private renderer: Renderer2, private formattingService: FormattingService, @Inject(DOCUMENT) private doc: Document) {
         super();
     }
 
     ngAfterViewInit(): void {
-        const input = this.elementRef().nativeElement as HTMLInputElement;
+        const input = this.elementRef()!.nativeElement as HTMLInputElement;
         input.value = toHHmm(this.initialValue) ?? '';
         if (!this.ngGrid.isInFindMode()) {
             this.mask = new MaskFormat(createTimeMaskFormat(), this.renderer, input, this.formattingService, this.doc);
@@ -45,8 +45,8 @@ export class TimeEditor extends EditorDirective {
     }
 
     // an invalid entry keeps the cell's value
-    getValue(): number | string {
-        const text = (this.elementRef().nativeElement as HTMLInputElement).value;
+    getValue(): number | string | null {
+        const text = (this.elementRef()!.nativeElement as HTMLInputElement).value;
         if (this.ngGrid.isInFindMode()) {
             return text;
         }

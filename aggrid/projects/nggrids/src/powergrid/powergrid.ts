@@ -846,8 +846,8 @@ export class PowerGrid extends NGGridDirective {
                             this.agGridOptions.groupRowRendererParams = {
                                 innerRenderer: this.groupRowRendererFunc() || this.groupRowInnerRenderer
                             };
-                            this.agGrid().api.setGridOption('groupRowRendererParams', this.agGridOptions.groupRowRendererParams);
-                            this.agGrid().api.redrawRows();
+                            this.agGrid()!.api.setGridOption('groupRowRendererParams', this.agGridOptions.groupRowRendererParams);
+                            this.agGrid()!.api.redrawRows();
                         }
                         break;
                     case 'columns':
@@ -942,8 +942,8 @@ export class PowerGrid extends NGGridDirective {
                     case '_internalFilterModel':
                         this.__internalFilterModel.set(this._internalFilterModel());
                         if (this.isGridReady && change.currentValue) {
-                            this.agGrid().api.setFilterModel(change.currentValue);
-                            this.agGrid().api.onFilterChanged();
+                            this.agGrid()!.api.setFilterModel(change.currentValue);
+                            this.agGrid()!.api.onFilterChanged();
                             this.__internalFilterModel.set(null);
                             this._internalFilterModelChange.emit(this.__internalFilterModel());
                         }
@@ -1115,7 +1115,7 @@ export class PowerGrid extends NGGridDirective {
                     } else if (column.filterType === 'TIME') {
                         colDef.filter = 'timeFilter';
                         colDef.filterParams['suppressAndOrCondition'] = true;
-                        if(!this.servoyApi.isInDesigner()) colDef.floatingFilterComponent = 'timeFilter';
+                        if(!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'timeFilter';
                     } else if (column.filterType === 'DATE') {
                         //colDef.filter = 'agDateColumnFilter';
                         colDef.filter = 'dateFilter';
@@ -1510,7 +1510,7 @@ export class PowerGrid extends NGGridDirective {
                 if (eventType && autoSizeOnEvents.indexOf(eventType) > -1) {
                     // check if grid is visible before auto-sizing; when not visible, measurements are
                     // incorrect (columns collapse to their minimum width)
-                    const autoSizeElement = this.agGridElementRef().nativeElement;
+                    const autoSizeElement = this.agGridElementRef()!.nativeElement;
                     if (autoSizeElement && autoSizeElement.clientWidth > 0 && autoSizeElement.clientHeight > 0) {
                         const skipHeader = this.agGridOptions.skipHeaderOnAutoSize === true ? true : false;
                         this.autoSizeColumns(skipHeader);
@@ -2427,13 +2427,13 @@ export class PowerGrid extends NGGridDirective {
     }
 
     private moveSelectionToAdjacentRow(direction: number) {
-        const api = this.agGrid().api;
+        const api = this.agGrid()!.api;
         const selectedNodes = api.getSelectedNodes();
         const rowCount = api.getDisplayedRowCount();
 
         // start from the current selection; if nothing is selected, start just outside the grid so
         // the first step lands on the first/last row
-        let index = selectedNodes.length ? selectedNodes[0].rowIndex : (direction > 0 ? -1 : rowCount);
+        let index = selectedNodes.length ? (selectedNodes[0].rowIndex ?? 0) : (direction > 0 ? -1 : rowCount);
         let newIndex = index + direction;
         let nextRow = api.getDisplayedRowAtIndex(newIndex);
         while (nextRow && nextRow.group) {
@@ -2453,7 +2453,7 @@ export class PowerGrid extends NGGridDirective {
      */
     getRecordCount(): number {
         let count = 0;
-        this.agGrid().api.forEachNodeAfterFilterAndSort((node) => {
+        this.agGrid()!.api.forEachNodeAfterFilterAndSort((node) => {
             if (!node.group) {
                 count++;
             }
@@ -2466,14 +2466,14 @@ export class PowerGrid extends NGGridDirective {
      * filtered/sorted order), or 0 when nothing (or only a group row) is selected.
      */
     getSelectedRecordIndex(): number {
-        const selectedNodes = this.agGrid().api.getSelectedNodes();
+        const selectedNodes = this.agGrid()!.api.getSelectedNodes();
         if (!selectedNodes.length) {
             return 0;
         }
         const selectedId = selectedNodes[0].id;
         let position = 0;
         let leafIndex = 0;
-        this.agGrid().api.forEachNodeAfterFilterAndSort((node) => {
+        this.agGrid()!.api.forEachNodeAfterFilterAndSort((node) => {
             if (!node.group) {
                 leafIndex++;
                 if (node.id === selectedId) {

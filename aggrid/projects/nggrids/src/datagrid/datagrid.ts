@@ -617,7 +617,7 @@ export class DataGrid extends NGGridDirective {
 				} else {
 					// without timeout the column don't fit automatically
 					this.setTimeout(() => {
-						const element = this.agGridElementRef().nativeElement;
+						const element = this.agGridElementRef()!.nativeElement;
 						if (element && element.clientWidth > 0 && element.clientHeight > 0) {
 							this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.GRID_READY);
 							this.scrollToSelectionEx();
@@ -883,7 +883,7 @@ export class DataGrid extends NGGridDirective {
 						}
 						this.updateColumnDefs();
 					}
-					const element = this.agGridElementRef().nativeElement;
+					const element = this.agGridElementRef()!.nativeElement;
 					if (element && element.clientWidth > 0 && element.clientHeight > 0) {
 						this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.DISPLAYED_COLUMNS_CHANGED);
 						this.storeColumnsState(e.source === 'api');
@@ -1273,7 +1273,7 @@ export class DataGrid extends NGGridDirective {
 		this.agGridElementRef()!.nativeElement.addEventListener('mouseleave', (e: MouseEvent) => {
 			// the card is a sibling of the grid, so reaching its copy buttons means leaving the
 			// grid - that is not a reason to close it, onDesignCardLeave handles that
-			const card = this.designHoverCardRef() ? this.designHoverCardRef().nativeElement : null;
+			const card = this.designHoverCardRef() ? this.designHoverCardRef()!.nativeElement : null;
 			if (card && e.relatedTarget instanceof Node && card.contains(e.relatedTarget)) {
 				return;
 			}
@@ -1676,7 +1676,7 @@ export class DataGrid extends NGGridDirective {
 					const autoSizeOnEvents = [GRID_EVENT_TYPES.GRID_READY, GRID_EVENT_TYPES.GRID_ROW_POST_CREATE];
 					if (eventType && autoSizeOnEvents.indexOf(eventType) > -1) {
 						// check if grid is visible before auto-sizing; when not visible, measurements are incorrect
-						const autoSizeElement = this.agGridElementRef().nativeElement;
+						const autoSizeElement = this.agGridElementRef()!.nativeElement;
 						if (autoSizeElement && autoSizeElement.clientWidth > 0 && autoSizeElement.clientHeight > 0) {
 							const skipHeader = this.agGridOptions.skipHeaderOnAutoSize === true ? true : false;
 							this.autoSizeColumns(skipHeader);
@@ -1953,7 +1953,7 @@ export class DataGrid extends NGGridDirective {
 				} else if (column.filterType === 'TIME') {
 					colDef.filter = 'timeFilter';
 					colDef.filterParams['suppressAndOrCondition'] = true;
-					if (!this.servoyApi.isInDesigner()) colDef.floatingFilterComponent = 'timeFilter';
+					if (!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'timeFilter';
 				} else if (column.filterType === 'DATE') {
 					//colDef.filter = 'agDateColumnFilter';
 					colDef.filter = 'dateFilter';
@@ -2634,7 +2634,7 @@ export class DataGrid extends NGGridDirective {
 				}
 				let loadedNodeCount = 0;
 				let allLoadedCovered = true;
-				this.agGrid().api.forEachNode((node: any) => {
+				this.agGrid()!.api.forEachNode((node: any) => {
 					if (!node.group) {
 						loadedNodeCount++;
 						if (node.rowIndex == null || !selIdxSet[node.rowIndex]) {
@@ -2646,7 +2646,7 @@ export class DataGrid extends NGGridDirective {
 			}
 			// In select-all mode, include all currently loaded nodes to prevent deselection when new blocks load.
 			if (this.lazyLoadingSelectAll) {
-				this.agGrid().api.forEachNode((node: any) => {
+				this.agGrid()!.api.forEachNode((node: any) => {
 					if (!node.group && selectedNodes.indexOf(node) === -1) {
 						selectedNodes.push(node);
 					}
@@ -3975,7 +3975,7 @@ export class DataGrid extends NGGridDirective {
 	 * sort, the filter icon, the column menu and the headerCheckbox template, all of which the
 	 * default component wires up itself through data-ref. One shared card costs none of that.
 	 */
-	private designHoverColId: string = null;
+	private designHoverColId: string | null = null;
 
 	private onDesignHeaderHover(event: MouseEvent) {
 		const byColId = this.designInfoByColId();
@@ -3996,8 +3996,8 @@ export class DataGrid extends NGGridDirective {
 		this.showDesignCard(colId ? byColId[colId] : null, cell as HTMLElement);
 	}
 
-	private showDesignCard(info: DesignColumnInfo, anchor: HTMLElement) {
-		const card = this.designHoverCardRef() ? this.designHoverCardRef().nativeElement : null;
+	private showDesignCard(info: DesignColumnInfo | null, anchor: HTMLElement) {
+		const card = this.designHoverCardRef() ? this.designHoverCardRef()!.nativeElement : null;
 		if (!card) {
 			return;
 		}
@@ -4010,7 +4010,7 @@ export class DataGrid extends NGGridDirective {
 
 		// the content comes from the signal just set, and this component is OnPush - it has to be
 		// in the DOM before offsetWidth/offsetHeight can place the card
-		this.cdRef.detectChanges();
+		this.detectChanges();
 
 		// already open is the normal case when moving between header cells - it only has to move
 		if (!card.matches(':popover-open')) {
@@ -4050,7 +4050,7 @@ export class DataGrid extends NGGridDirective {
 	}
 
 	private hideDesignCard() {
-		const card = this.designHoverCardRef() ? this.designHoverCardRef().nativeElement : null;
+		const card = this.designHoverCardRef() ? this.designHoverCardRef()!.nativeElement : null;
 		if (card && card.matches(':popover-open')) {
 			card.hidePopover();
 		}
@@ -4213,7 +4213,7 @@ export class DataGrid extends NGGridDirective {
 				// rows the grid holds; select all stays on the loaded records
 				foundsetIndexes = new Array();
 				if (this.foundset.foundset.multiSelect) {
-					this.agGrid().api.forEachNode((node: any) => {
+					this.agGrid()!.api.forEachNode((node: any) => {
 						if (!node.group && node.rowIndex != null && foundsetIndexes.indexOf(node.rowIndex) === -1) {
 							foundsetIndexes.push(node.rowIndex);
 						}

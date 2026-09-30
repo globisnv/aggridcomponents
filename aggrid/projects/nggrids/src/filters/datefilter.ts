@@ -320,7 +320,7 @@ export class DateFilter extends FilterDirective {
     // filter semantics (time part ignored) and the server-side filtering. For a Power Grid that
     // filters server-side every rendered row already matches, so all rows pass.
     doesFilterPass(params: any): boolean {
-      return this.dateModelPasses(this.model, params && params.data ? params.data[this.params.colDef.field] : null);
+      return this.dateModelPasses(this.model, params && params.data ? params.data[this.params.colDef.field!] : null);
     }
 
     private dateModelPasses(model: any, cellValue: any): boolean {

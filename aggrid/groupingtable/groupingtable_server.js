@@ -459,7 +459,7 @@ function applyFilterModelToQuery(query, sFilterModel) {
 		for (var i = 0; i < $scope.model.columns.length; i++) {
 			var filter = filterModel[i];
 			if (!filter) continue;
-			var dp = $scope.model.columns[i].dataprovider;
+			var dp = $scope.model.columns[i].filterDataprovider || $scope.model.columns[i].dataprovider;
 			var whereClauseForDP = null;
 			if (filter['operator']) {
 				if (filter['conditions'] && filter['conditions'].length > 1) {
