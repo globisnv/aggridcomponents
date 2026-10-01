@@ -66,7 +66,7 @@ const DESIGN_HOVER_GAP = 7;
  * globisservices - deliberately redeclared, @servoy/nggrids must not depend on @globis/*.
  */
 export interface DesignColumnInfo {
-	dataprovider: string;
+	title: string;
 	rows: Array<{ label: string; value: string }>;
 	description?: string;
 }

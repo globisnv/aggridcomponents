@@ -16,7 +16,7 @@
        the card looks identical to the ones on fields. Position is set in showDesignCard(). -->
   <div #designHoverCard class="design-hover" popover="manual" (mouseleave)="onDesignCardLeave()">
     @if (designCard(); as card) {
-      <div class="design-hover-head">{{ card.dataprovider }}</div>
+      <div class="design-hover-head">{{ card.title }}</div>
       @if (card.rows && card.rows.length) {
         <dl class="design-hover-rows">
           @for (row of card.rows; track $index) {
