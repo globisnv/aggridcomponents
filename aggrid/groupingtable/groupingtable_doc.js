@@ -161,7 +161,27 @@ var moveToNextEditableCellOnTab;
 /**
  * When the component is hidden, if a filter is applied, keep it applied on the foundset.
  */
-var keepAppliedFilterOnHide
+var keepAppliedFilterOnHide;
+
+/**
+ * When true, enables master/detail mode. Rows can be expanded to show a detail form.
+ */
+var masterDetail;
+
+/**
+ * The form to display in the detail panel when a row is expanded in master/detail mode.
+ */
+var detailForm;
+
+/**
+ * The relation name to use when showing the detail form, so it displays related records of the expanded row.
+ */
+var detailRelation;
+
+/**
+ * The height in pixels of the detail panel when a row is expanded in master/detail mode.
+ */
+var detailRowHeight;
 
 /**
  * Tab sequence index used for keyboard navigation in the grid.
@@ -327,6 +347,16 @@ var handlers = {
     onDrop: function() {},
 
     /**
+     * Called when a master row is about to be expanded. Return an object with {form, relation, height} to dynamically configure the detail panel for this row.
+     * If nothing is returned, the model-level detailForm/detailRelation/detailRowHeight are used.
+     *
+     * @param {Number} foundsetindex The index of the row being expanded.
+     * @param {JSRecord} [record] The record of the row being expanded.
+     * @return {Object} An object with optional properties: form (String), relation (String), height (Number).
+     */
+    onDetailFormSetup: function() {},
+
+    /**
      * Called when a custom main menu item is chosen.
      *
      * @param {String} menuItemName The name of the custom menu item that was selected.
@@ -359,12 +389,6 @@ function notifyDataChange() {
  * @public
  * */
 function refreshData() {
-}
-
-/**
- * Returns the selected rows when in grouping mode
- */
-function getGroupedSelection() {
 }
 
 /**
@@ -417,7 +441,7 @@ function showToolPanel(show) {
  *
  * @return {Boolean} `true` if the ToolPanel is showing otherwise `false`
  */
-function isToolPanelShowing(show) {
+function isToolPanelShowing() {
 }
 
 
@@ -503,11 +527,13 @@ function removeAllColumns() {
 /**
  * Set new columns
  *
+ * @param {Array<CustomType<aggrid-groupingtable.column>>} columns The columns to set on the table.
+ *
  * @example
- *     %%prefix%%elements.%%elementName%%.setColumn(columns)
+ *     %%prefix%%elements.%%elementName%%.setColumns(columns)
  *
  */
-function setColumns() {
+function setColumns(columns) {
 }
 
 /**
@@ -526,7 +552,7 @@ function getViewColumns() {
  * 
  * @return {CustomType<aggrid-groupingtable.viewColumn>} The view column object corresponding to the specified column ID.
  */
-function getViewColumnById() {
+function getViewColumnById(colId) {
 
 }
 
@@ -541,7 +567,10 @@ function moveColumn(id, index) {
 /**
  * Restore columns state to a previously save one, using getColumnState.
  * 
- * If no argument is used, it restores the columns to designe time state.
+ * If no argument is used, it restores the columns to the initial state: the state the grid had when it became ready.
+ * This is the design time state, unless restoreColumnState(columnState) was already called before the grid was ready
+ * (before onGridReady, for example in onShow); in that case, the state applied at that moment is the initial state.
+ * To be able to return to the design time state, apply your own stored state from onGridReady, not earlier.
  * If the columns from columnState does not match with the columns of the component, no restore will be done.
  * 
  * The optional boolean arguments: columns, filter, sort can be used to specify what to restore:
@@ -549,7 +578,7 @@ function moveColumn(id, index) {
  * - the filter state (default false),
  * - the sort state (default false).
  * 
- * @param {string} [columnState] A JSON string representing the saved state of the columns, including width, position, visibility, filters, and sorting. If omitted, the columns will be restored to their design-time state.
+ * @param {string} [columnState] A JSON string representing the saved state of the columns, including width, position, visibility, filters, and sorting. If omitted, the columns will be restored to their initial state (the design-time state, unless a state was already restored before the grid was ready).
  * @param {function} [onError] A callback function to handle errors during the restore process, such as mismatched column configurations.
  * @param {Boolean} [columns] Specifies whether to restore the columns' size, position, and visibility. Defaults to true.
  * @param {Boolean} [filter] Specifies whether to restore the columns' filter state. Defaults to false.
@@ -701,10 +730,10 @@ function getColumnIndex(colId) {
 }
 
 /**
- * Set the selection in grouping mode 111. The table must be already in grouping mode,
+ * Set the selection in grouping mode. The table must be already in grouping mode,
  * and the record already loaded (the group of the record expanded - see: setExpandedGroups)
  *
- * @param {Array<JSRecord>} selectedRecords Form editor value
+ * @param {Array<JSRecord>} selectedRecords The records to select in the currently expanded groups.
  */ 
 function setGroupedSelection(selectedRecords) {
 }
@@ -770,7 +799,7 @@ function getGroupedSelection() {
  * ];
  * elements.myTable.setCheckboxGroupSelection(selectedHeaders);
  */
-function setCheckboxGroupSelection() {
+function setCheckboxGroupSelection(groups) {
 }
 
 /**
@@ -872,6 +901,14 @@ var svy_types = {
          * CSS class for the header group.
          */
         headerGroupStyleClass: null,
+
+        /**
+         * Group-level flag, read from the first column that establishes the header group.
+         * When true, keeps the columns of the header group together so an end user can
+         * reorder the whole group but cannot drag an individual column out of it (maps to
+         * AG Grid marryChildren). Its value on later member columns is ignored.
+         */
+        headerGroupKeepColumnsTogether: false,
 
         /**
          * When true the column has checkbox for selecting/unselecting all rows
@@ -1002,6 +1039,16 @@ var svy_types = {
          * Filter type to be used for this column.
          */
         filterType: null,
+
+        /**
+         * Valuelist used only to populate the VALUELIST/RADIO column filter. Unlike 'valuelist' it is not bound to the foundset, so it does not trigger per-row display value resolution. Use together with 'filterDataprovider' when the column displays a related or derived value whose type differs from the valuelist real value.
+         */
+        filterValuelist: null,
+
+        /**
+         * Dataprovider the filter condition is applied to. Defaults to 'dataprovider'. Use when the displayed dataprovider differs from the column whose values match the filter valuelist's real values.
+         */
+        filterDataprovider: null,
 
         /**
          * Used to set the column id (colId) property in the serialized column state json string of getColumnState and onColumnStateChanged

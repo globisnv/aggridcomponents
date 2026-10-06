@@ -1,7 +1,7 @@
-import { AgFloatingFilterComponent } from 'ag-grid-angular';
-import { FilterChangedEvent, IFilterParams, IFloatingFilterParams, IFloatingFilterParent } from 'ag-grid-community';
-import { ChangeDetectorRef, Directive, ElementRef, inject, viewChild } from '@angular/core';
-import { NULL_VALUE } from '../datagrid/datagrid';
+import type { AgFloatingFilterComponent } from 'ag-grid-angular';
+import type { FilterChangedEvent, IFilterParams, IFloatingFilterParams, IFloatingFilterParent } from 'ag-grid-community';
+import { Directive, ElementRef, signal, viewChild } from '@angular/core';
+import { NULL_VALUE } from '../commons/constants';
 import { Deferred } from '@servoy/public';
 import { NGGridDirective } from '../nggrid';
 
@@ -14,20 +14,20 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
     
     readonly elementRef = viewChild<ElementRef>('element');
     readonly element1Ref = viewChild<ElementRef>('element1');
-    readonly cdRef = inject(ChangeDetectorRef);
-    ngGrid: NGGridDirective;
-    params: IFilterParams;
-    floatingParams: IFloatingFilterParams;
+    readonly _valuelistValues = signal<any>(undefined);
+    ngGrid!: NGGridDirective;
+    params!: IFilterParams;
+    floatingParams!: IFloatingFilterParams;
     model: any;
     instance: any;
     valuelistValues: any;
     hasValuelistSet: boolean = false;
     format: any;
-    txtClearFilter: string;
-    txtApplyFilter: string;
+    txtClearFilter!: string;
+    txtApplyFilter!: string;
     isRealValueUUID: boolean = false;
 
-    valuelistValuesDefer: Deferred<any>;
+    valuelistValuesDefer!: Deferred<any>;
 
     constructor() {
         this.instance = this;
@@ -52,7 +52,7 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
         const valuelist = this.ngGrid.getValuelistForFilter(this.params);
         if (valuelist) {
           this.hasValuelistSet = true;
-          valuelist.filterList('').subscribe((valuelistValues) => {
+          valuelist.filterList('').subscribe((valuelistValues: any) => {
             if(valuelistValues.isRealValueUUID) {
               this.isRealValueUUID = valuelistValues.isRealValueUUID();
             }
@@ -60,8 +60,8 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
             if(!this.hasApplyButton()) {
               this.valuelistValues.splice(0, 0, NULL_VALUE);
             }
-            this.cdRef.markForCheck();
-            this.ngGrid.cdRef.detectChanges();
+            this._valuelistValues.set(this.valuelistValues);
+            this.ngGrid.detectChanges();
             this.valuelistValuesDefer.resolve(this.valuelistValues);
           });
         } else {
@@ -71,16 +71,16 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
     }
 
     onClearFilter() {
-        this.elementRef().nativeElement.value = '';
+        this.elementRef()!.nativeElement.value = '';
         if(!this.suppressAndOrCondition()) {
-          this.element1Ref().nativeElement.value = '';
+          this.element1Ref()!.nativeElement.value = '';
         }
         this.model = '';
     }
 
     onApplyFilter() {
       if(this.isFloating) {
-        this.floatingParams.parentFilterInstance((instance: FilterDirective) => {
+        this.floatingParams.parentFilterInstance((instance: any) => {
           instance.valuelistValuesDefer.promise.then(() => {
             instance.onFloatingFilterChanged('equals', this.getFilterUIValue());
           });
@@ -133,7 +133,7 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
         return null;
     }
 
-    setFilterUIValue(value) {
+    setFilterUIValue(value: any) {
     }
 
     getSecondFilterUIValue(): any {
@@ -170,7 +170,7 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
 
     doesFilterPass(params: any): boolean {
       if(this.model && !this.ngGrid.hasValuelistResolvedDisplayData()) {
-        return this.model.filter == params.data[this.params.colDef.field];
+        return this.model.filter == params.data[this.params.colDef.field!];
       } 
       return true;
     }
@@ -188,7 +188,7 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
     }
 
     hasApplyButton(): boolean {
-      return !this.isFloating && this.params['buttons'] instanceof Array && this.params['buttons'].indexOf('apply') !== -1;
+      return !this.isFloating && (this.params as any)['buttons'] instanceof Array && (this.params as any)['buttons'].indexOf('apply') !== -1;
     }
 
     valueChanged() {
@@ -200,10 +200,10 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
     }
 
     suppressAndOrCondition(): boolean {
-      return this.params['suppressAndOrCondition'] === true;
+      return (this.params as any)['suppressAndOrCondition'] === true;
     }
 
-    getCondition(realValue): any {
+    getCondition(realValue: any): any {
       return {
         filterType: this.isRealValueUUID ? 'uuid' : isNaN(realValue) ? 'text' : 'number',
         type: 'equals',
@@ -212,7 +212,7 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
       };
     }
 
-    getCondition2(realValue): any {
+    getCondition2(realValue: any): any {
       return {
         filterType: this.isRealValueUUID ? 'uuid' : isNaN(realValue) ? 'text' : 'number',
         type: 'equals',

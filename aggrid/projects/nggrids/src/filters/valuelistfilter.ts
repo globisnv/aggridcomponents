@@ -1,9 +1,9 @@
 import { ChangeDetectionStrategy, Component, viewChild } from '@angular/core';
-import { NgbTypeahead } from '@ng-bootstrap/ng-bootstrap';
+import { NgbModule, NgbTypeahead } from '@ng-bootstrap/ng-bootstrap';
 import { merge, Observable, of, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter, switchMap } from 'rxjs/operators';
 import { FilterDirective } from './filter';
-import { NULL_VALUE } from '../datagrid/datagrid';
+import { NULL_VALUE } from '../commons/constants';
 
 @Component({
     selector: 'aggrid-datagrid-valuelistfilter',
@@ -51,7 +51,8 @@ import { NULL_VALUE } from '../datagrid/datagrid';
         <ngb-highlight [result]="getFormatedDisplayValue(r.displayValue)" [term]="t"></ngb-highlight>
       </ng-template>
       `,
-    standalone: false,
+    standalone: true,
+    imports: [NgbModule],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ValuelistFilter extends FilterDirective {
@@ -83,7 +84,7 @@ export class ValuelistFilter extends FilterDirective {
               valuelistObs = of([]);
             }
           } else {
-            valuelistObs = of(this.valuelistValues.filter(str => {
+            valuelistObs = of(this.valuelistValues.filter((str: any) => {
               return str.displayValue.toLowerCase().indexOf((term as string).toLowerCase()) != -1;
             }));
           }
@@ -111,14 +112,14 @@ export class ValuelistFilter extends FilterDirective {
     };
 
     getFilterUIValue(): any {
-      return this.elementRef().nativeElement.value;
+      return this.elementRef()!.nativeElement.value;
     }
 
-    setFilterUIValue(value) {
-      this.elementRef().nativeElement.value = value;
+    setFilterUIValue(value: any) {
+      this.elementRef()!.nativeElement.value = value;
     }
 
     getSecondFilterUIValue(): any {
-      return this.element1Ref().nativeElement.value;
+      return this.element1Ref()!.nativeElement.value;
     }
 }

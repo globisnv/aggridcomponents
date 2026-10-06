@@ -17,6 +17,7 @@
     },
 	"model":
 	{
+		"designsize" : {"type" :"dimension", "tags": {"serveronly": true, "scope": "private"}, "default" : {"width":400, "height":300}},
 		"myFoundset": {"type": "foundset", "default" : {"foundsetSelector":""}, "pushToServer" : "allow" , "foundsetDefinitionListener": true,"initialPreferredViewPortSize": 50, "tags": {"allowaccess": "enabled", "doc": "The foundset where data are fetched from", "basic": true} },
 		"columns": { "type": "column[]", "droppable" : true, "pushToServer": "shallow", "tags": {"wizard": "autoshow", "allowaccess": "enabled", "doc": "List all columns to be used in table as dataprovider", "basic": true}},
 		"columnState": { "type": "string", "tags": {"scope" : "private", "allowaccess": "enabled"}, "pushToServer": "allow"},
@@ -42,7 +43,6 @@
 		"tooltipTextRefreshData" : { "type": "tagstring", "default" : "Refresh for latest data !", "tags": {"doc": "Tooltip text shown when hovering the refresh button"}},
 		"visible": "visible",
 		"hashedFoundsets": { "type": "hashedFoundset[]", "default": [], "tags": {"scope": "private", "allowaccess": "enabled"}, "pushToServer": "shallow"},
-		"hashedColumns": {"type" : "string[]", "default": [], "tags": {"scope": "private"}},
 		"showColumnsMenuTab": {"type": "boolean", "default" : false, "tags" : {"scope": "design", "doc": "If the column selection panel should be shown in the column menu"}},
 		"toolPanelConfig": { "type": "toolPanelConfig", "tags": { "scope": "design" } },
 		"iconConfig": { "type": "iconConfig", "tags": { "scope": "design" } },
@@ -69,9 +69,12 @@
 		"_internalCheckboxGroupSelection": { "type": "object[]", "tags": {"scope" : "private"}, "pushToServer": "allow"},
 		"_internalFunctionCalls": { "type": "functionCall[]", "tags": {"scope" : "private"}},
 		"_internalHasDoubleClickHandler": { "type": "boolean", "default": false, "tags": {"scope" : "private"}},
-		"_internalVisible": { "type": "boolean", "tags": {"scope" : "private"}},
+		"_internalVisible": { "type": "boolean", "tags": { "serveronly": true,"scope" : "private"}},
 		"customMainMenu": {"type": "JSMenu", "extraPropertiesCategory" : "NG-Grids", "extraProperties": { "isSeparator": "boolean", "hideForColIds": "string", "showForColIds": "string", "agGridMenuItem": {"type": "string", "values": ["", "sortAscending", "sortDescending", "sortUnSort", "columnFilter", "columnChooser", "pinSubMenu", "valueAggSubMenu", "autoSizeThis", "autoSizeAll", "rowGroup", "rowUnGroup", "resetColumns", "expandAll", "contractAll"] } }, "tags": {"doc": "Menu items to append to the columns menu, beside the default aggrid menus."}},
-		"keepAppliedFilterOnHide":  { "type": "boolean", "default": false, "tags": {"doc": "When the component is hidden, if a filter is applied, keep it applied on the foundset."} }
+		"keepAppliedFilterOnHide":  { "type": "boolean", "default": false, "tags": { "serveronly": true,"doc": "When the component is hidden, if a filter is applied, keep it applied on the foundset."} },
+		"masterDetail": {"type": "boolean", "default": false, "tags": {"doc": "When true, enables master/detail mode. Rows can be expanded to show a detail form."}},
+		"detailForm": {"type": "formcomponent", "forFoundset": "myFoundset", "tags": {"skipRendering": true, "doc": "The form to display in the detail panel when a row is expanded in master/detail mode. Fields in this form can use related dataproviders to show related data."}},
+		"detailRowHeight": {"type": "int", "default": 200, "tags": {"doc": "The height in pixels of the detail panel when a row is expanded in master/detail mode."}}
 	},
 	"handlers" : {
     	"onSelectedRowsChanged": {
@@ -393,6 +396,19 @@
 				"type": "JSDNDEvent"
 			}]			
 		},
+		"onDetailFormSetup": {
+			"doc": "Called when a master row is about to be expanded. Return an object with {form, relation, height} to dynamically configure the detail panel for this row. If nothing is returned, the model-level detailForm/detailRelation/detailRowHeight are used.",
+			"parameters": [{
+				"name": "foundsetindex",
+				"type": "int"
+			}, {
+				"name": "record",
+				"type": "record",
+				"optional": true
+			}],
+			"returns": {"type": "object"},
+			"allowaccess": "enabled"
+		},
 		"onCustomMainMenuAction" : {
 			"doc": "Called when a custom main menu item is chosen",
 			"parameters": [{
@@ -705,6 +721,7 @@
 			"headerTooltip" : {"type" : "tagstring"},
 			"headerGroup": {"type" : "tagstring", "tags": {"doc": "Header group, that this column will be part of"}},
 			"headerGroupStyleClass" : {"type" : "styleclass"},
+			"headerGroupKeepColumnsTogether": {"type": "boolean", "default": false, "tags": {"doc": "Group-level flag, read from the first column that establishes the header group. When true, keeps the columns of the header group together so an end user can reorder the whole group but cannot drag an individual column out of it (maps to AG Grid marryChildren). Its value on later member columns is ignored."}},
 			"headerCheckbox" : {"type": "boolean", "default" : false, "tags" : {"scope": "design", "doc": "When true the column has checkbox for selecting/unselecting all rows"}},
 			"dataprovider": { "type": "dataprovider", "forFoundset": "myFoundset", "resolveValuelist" : true, "pushToServer" : "allow", "ondatachange": { "onchange":"onElementDataChange"}, "tags": { "wizard": "1", "useAsCaptionInDeveloper" : true, "captionPriority" : 2, "basic": true }},
 			"tooltip": { "type": "dataprovider", "forFoundset": "myFoundset", "pushToServer" : "reject"},
@@ -733,6 +750,8 @@
 			"editFormSize": {"type": "dimension", "default" : {"width":300, "height":200}},
 			"stopEditingOnChange" : {"type": "boolean", "default" : false},
 			"filterType": {"type": "string", "values": [{"NONE":null}, {"TEXT":"TEXT"}, {"NUMBER":"NUMBER"}, {"DATE":"DATE"}, {"TIME":"TIME"}, {"VALUELIST":"VALUELIST"}, {"RADIO":"RADIO"}]},
+			"filterValuelist": { "type": "valuelist", "config": "valuelistConfig", "tags": { "doc": "Valuelist used only to populate the VALUELIST/RADIO column filter. Unlike 'valuelist' it is not bound to the foundset, so it does not trigger per-row display value resolution. Use together with 'filterDataprovider' when the column displays a related or derived value whose type differs from the valuelist real value." }},
+			"filterDataprovider": { "type": "dataprovider", "forFoundset": "myFoundset", "pushToServer": "reject", "tags": { "doc": "Dataprovider the filter condition is applied to. Defaults to 'dataprovider'. Use when the displayed dataprovider differs from the column whose values match the filter valuelist's real values." }},
 			"id": {"type" : "string", "tags": {"wizard": {"prefill" : "dataprovider", "unique": true}, "basic": true, "showInOutlineView": true, "doc": "Used to set the column id (colId) property in the serialized column state json string of getColumnState and onColumnStateChanged" }},
 			"columnDef": {"type" : "json", "tags": {"doc": "Map where additional column properties of ag-grid can be set", "value_types": {"valueGetter": "clientfunction"}}},
 			"showAs": { "type": "string", "values": [{"text":null}, {"html":"html"}, {"sanitizedHtml":"sanitizedHtml"}] },
@@ -849,7 +868,8 @@
 			"displayedColumnsChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when columns are added/removed"} },
 			"gridReady" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when grid is ready to be shown"} },
 			"gridSizeChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when grid size changes"} },
-			"toolPanelVisibleChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when the toolpanel visibility is changed"} }
+			"toolPanelVisibleChange" : { "type": "boolean", "default": true, "tags": {"doc": "Apply 'columnsAutoSizing' when the toolpanel visibility is changed"} },
+			"gridRowPostCreate" : { "type": "boolean", "default": false, "tags": {"scope": "design", "doc": "Apply 'columnsAutoSizing' when rows are re-rendered"} }
 		},
 		"JSDNDEvent" : {
 			"extends" : "JSEvent",

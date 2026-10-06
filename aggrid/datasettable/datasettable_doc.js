@@ -19,7 +19,14 @@ var responsiveHeight;
 var rowHeight;
 
 /**
- * Function to add style class to row
+ * Function to add style class to row.
+ *
+ * @param {number} rowIndex - The row index
+ * @param {object} rowData - The row data (for group rows: merged groupData + aggData)
+ * @param {object} event - The event object (may be null)
+ * @param {boolean} isGroup - Whether this is a group row
+ * @param {object} params - The full AG Grid RowClassParams (includes node, api, context)
+ * @return {string} CSS class name(s) to apply
  */
 var rowStyleClassFunc;
 
@@ -186,11 +193,11 @@ var customMainMenu;
 
 var handlers = {
     /**
-     * Called when the mouse is clicked on a row/cell
+     * Called when a row is selected or deselected
      *
-     * @param {Object} rowData The data for the clicked row.
+     * @param {Object} rowData The data for the affected row.
      * @param {Boolean} selected True if the row has been selected, false if deselected.
-     * @param {JSEvent} [event] The event object associated with the click.
+     * @param {JSEvent} [event] The event object associated with the selection change.
      */
     onRowSelected: function() {},
 
@@ -340,7 +347,7 @@ function exportData(fileName, skipHeader, columnGroups, skipFooters, skipGroups,
 /**
  * Export data to JSDataSet
  *
- * @return {JSDataset} A dataset object containing the exported grid data, where the first row represents 
+ * @return {JSDataset} A dataset object containing the exported grid data, where the first row contains the column header names and each subsequent row contains the cell values of a grid row (after filtering and sorting).
  */
 function exportToDataset() {
 }
@@ -431,7 +438,7 @@ function getColumnState() {
 
 /**
  * Restore columns state to a previously save one, using getColumnState.
- * If no argument is used, it restores the columns to designe time state.
+ * If no argument is used, it resets the columns (width, position, visibility, sort, filter) to the design time state.
  * It won't re-create deleted columns.
  * 
  * @param {String} [columnState] A JSON string representing the saved state of the columns, including width, position, and grouping state. If not provided, the columns will be restored to their design-time state.
@@ -469,9 +476,10 @@ function getColumn(id, forChange) {
 
 /**
  * Fills the table with data from a dataset.
- * The column name from the dataset is used to match on the component column id
+ * The column name from the dataset is used to match on the component column dataprovider (case-insensitive).
+ * Columns without a dataprovider will not render dataset values.
  * 
- * @param {JSDataset} [dataset] The dataset containing the data to populate the table. The dataset's column names must match the component's column IDs to bind data correctly.
+ * @param {JSDataset} [dataset] The dataset containing the data to populate the table. The dataset's column names must match the component's column dataproviders (case-insensitive) to bind data correctly.
  * @param {Array<String>} [pks] list of dataprovider names; needed in case of using apis: updateRows and deleteRows
  */
 function renderData(dataset, pks) {
@@ -486,7 +494,7 @@ function renderData(dataset, pks) {
  * "lastRowIndex" specifies the index of the last row on the server; if not set, the lazy loading will behave
  * like an infinite scroll, and onLazyLoadingGetRows will be called called until "lastRowIndex" will be set
  * 
- * @param {JSDataset} dataset The dataset containing the new rows to append to the table. The dataset's structure must align with the table's columns for proper data binding.
+ * @param {JSDataset} dataset The dataset containing the new rows to append to the table. The dataset's column names must match the component's column dataproviders (case-insensitive) to bind data correctly.
  * @param {long} [lastRowIndex] The index of the last row available on the server. If not provided, lazy loading will function as infinite scrolling until this value is set.
  * @param {Array<String>} [pks] list of dataprovider names; needed in case of using apis: updateRows and deleteRows
  */
@@ -614,6 +622,14 @@ var svy_types = {
          * CSS style class for the header group.
          */
         headerGroupStyleClass: null,
+
+        /**
+         * Group-level flag, read from the first column that establishes the header group.
+         * When true, keeps the columns of the header group together so an end user can
+         * reorder the whole group but cannot drag an individual column out of it (maps to
+         * AG Grid marryChildren). Its value on later member columns is ignored.
+         */
+        headerGroupKeepColumnsTogether: false,
 
         /**
          * The title text to be displayed in the column header.

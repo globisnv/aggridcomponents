@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, Inject, DOCUMENT, Renderer2, ElementRef, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Inject, DOCUMENT, Renderer2, ElementRef, inject, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { FilterDirective } from './filter';
 import { FormattingService, MaskFormat } from '@servoy/public';
 import { createTimeMaskFormat, parseMaskedTime, toHHmm } from '../time-minutes';
@@ -41,23 +42,26 @@ import { createTimeMaskFormat, parseMaskedTime, toHHmm } from '../time-minutes';
       </div>
     }</div>
     `,
-  standalone: false,
+  standalone: true,
+  imports: [FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TimeFilter extends FilterDirective {
     readonly elementToRef = viewChild<ElementRef>('elementTo');
+    // FilterDirective no longer provides one, and this component is OnPush
+    private readonly cdRef = inject(ChangeDetectorRef);
 
-    equals: string;
-    notEqual: string;
-    lessThan: string;
-    greaterThan: string;
-    inRange: string;
-    blank: string;
-    notBlank: string;
+    equals!: string;
+    notEqual!: string;
+    lessThan!: string;
+    greaterThan!: string;
+    inRange!: string;
+    blank!: string;
+    notBlank!: string;
 
     selectedFilterOperation = 'equals';
     // operator of the applied filter, shown by the floating filter
-    floatingOperator: string = null;
+    floatingOperator: string | null = null;
 
     private readonly masks: MaskFormat[] = [];
     private readonly listeners: Array<() => void> = [];
@@ -79,7 +83,7 @@ export class TimeFilter extends FilterDirective {
     }
 
     ngAfterViewInit(): void {
-        for (const input of [this.elementRef().nativeElement, this.elementToRef().nativeElement] as HTMLInputElement[]) {
+        for (const input of [this.elementRef()!.nativeElement, this.elementToRef()!.nativeElement] as HTMLInputElement[]) {
             this.masks.push(new MaskFormat(createTimeMaskFormat(), this.renderer, input, this.formattingService, this.doc));
             this.listeners.push(this.renderer.listen(input, 'keydown', (event: KeyboardEvent) => {
                 if (event.key === 'Enter') {
@@ -93,20 +97,20 @@ export class TimeFilter extends FilterDirective {
             }));
         }
         if (!this.isFloating) {
-            setTimeout(() => this.elementRef().nativeElement.focus(), 0);
+            setTimeout(() => this.elementRef()!.nativeElement.focus(), 0);
         }
     }
 
     getFilterUIValue(): any {
-        return this.elementRef().nativeElement.value;
+        return this.elementRef()!.nativeElement.value;
     }
 
-    setFilterUIValue(value) {
-        this.elementRef().nativeElement.value = value ?? '';
+    setFilterUIValue(value: any) {
+        this.elementRef()!.nativeElement.value = value ?? '';
     }
 
     getSecondFilterUIValue(): any {
-        return this.elementToRef().nativeElement.value;
+        return this.elementToRef()!.nativeElement.value;
     }
 
     getFilterRealValue(second?: boolean): any {
@@ -122,7 +126,7 @@ export class TimeFilter extends FilterDirective {
         if (this.isFloating) {
             const from = this.getFilterUIValue();
             const to = this.getSecondFilterUIValue();
-            this.floatingParams.parentFilterInstance((instance: TimeFilter) => instance.applyFloatingValues(from, to));
+            this.floatingParams.parentFilterInstance((instance: any) => instance.applyFloatingValues(from, to));
         } else {
             this.doFilter();
         }
@@ -130,7 +134,7 @@ export class TimeFilter extends FilterDirective {
 
     applyFloatingValues(from: string, to: string): void {
         this.setFilterUIValue(from);
-        this.elementToRef().nativeElement.value = to ?? '';
+        this.elementToRef()!.nativeElement.value = to ?? '';
         this.doFilter();
     }
 
@@ -153,11 +157,11 @@ export class TimeFilter extends FilterDirective {
         const isRange = parentModel?.type === 'inRange';
         const hasValue = parentModel && parentModel.type !== 'blank' && parentModel.type !== 'notBlank';
         this.setFilterUIValue(hasValue ? toHHmm(parentModel.filter) : '');
-        this.elementToRef().nativeElement.value = isRange ? (toHHmm(parentModel.filterTo) ?? '') : '';
+        this.elementToRef()!.nativeElement.value = isRange ? (toHHmm(parentModel.filterTo) ?? '') : '';
         this.cdRef.markForCheck();
     }
 
-    floatingOperatorSymbol(): string {
+    floatingOperatorSymbol(): string | null {
         switch (this.floatingOperator) {
             case 'equals': return '=';
             case 'notEqual': return '≠';
@@ -183,15 +187,15 @@ export class TimeFilter extends FilterDirective {
         this.selectedFilterOperation = (event.target as HTMLSelectElement).value;
         if (this.selectedFilterOperation === 'blank' || this.selectedFilterOperation === 'notBlank') {
             this.setFilterUIValue('');
-            this.elementToRef().nativeElement.value = '';
+            this.elementToRef()!.nativeElement.value = '';
         }
         if (!this.hasApplyButton()) {
             this.onApplyFilter();
         }
     }
 
-    getCondition(realValue): any {
-        const condition = {
+    getCondition(realValue: any): any {
+        const condition: Record<string, any> = {
             filterType: 'number',
             type: this.selectedFilterOperation,
             uiValue: this.getFilterUIValue()
@@ -208,7 +212,7 @@ export class TimeFilter extends FilterDirective {
     doesFilterPass(params: any): boolean {
         const model = this.model;
         if (!model) return true;
-        const value = params?.data ? params.data[this.params.colDef.field] : null;
+        const value = params?.data ? params.data[this.params.colDef.field!] : null;
         const isBlank = value === null || value === undefined || value === '';
         switch (model.type) {
             case 'blank': return isBlank;
@@ -226,7 +230,7 @@ export class TimeFilter extends FilterDirective {
     onClearFilter() {
         this.selectedFilterOperation = 'equals';
         this.setFilterUIValue('');
-        this.elementToRef().nativeElement.value = '';
+        this.elementToRef()!.nativeElement.value = '';
         this.doFilter();
         this.cdRef.markForCheck();
     }
@@ -238,7 +242,7 @@ export class TimeFilter extends FilterDirective {
 
     // shows a complete HH:mm, e.g. 13:__ becomes 13:00
     private normalizeInputs(): void {
-        for (const input of [this.elementRef().nativeElement, this.elementToRef().nativeElement] as HTMLInputElement[]) {
+        for (const input of [this.elementRef()!.nativeElement, this.elementToRef()!.nativeElement] as HTMLInputElement[]) {
             const minutes = parseMaskedTime(input.value);
             input.value = minutes === null ? '' : (toHHmm(minutes) ?? input.value);
         }

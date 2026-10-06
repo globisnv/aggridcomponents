@@ -21,22 +21,34 @@
           "configurations": {
             "production": {
               "tsConfig": "projects/nggrids/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/nggrids/tsconfig.lib.json"
             }
           }
         },
         "test": {
-          "builder": "@angular/build:karma",
+          "builder": "@angular/build:unit-test",
           "options": {
-            "preserveSymlinks": true,
-            "main": "projects/nggrids/src/test.ts",
             "tsConfig": "projects/nggrids/tsconfig.spec.json",
-            "karmaConfig": "projects/nggrids/karma.conf.js"
+            "buildTarget": "@servoy/nggrids:build:development",
+            "include": ["**/*.spec.ts"],
+            "exclude": ["**/*.browser.spec.ts"]
+          }
+        },
+        "test-browser": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "projects/nggrids/tsconfig.spec-browser.json",
+            "buildTarget": "@servoy/nggrids:build:development",
+            "browsers": ["chromium"],
+            "headless": true,
+            "include": ["projects/nggrids/src/**/*.browser.spec.ts"]
           }
         },
         "lint": {
           "builder": "@angular-eslint/builder:lint",
           "options": {
-            "preserveSymlinks": true,
             "lintFilePatterns": [
               "projects/nggrids/src/**/*.ts",
               "projects/nggrids/src/**/*.html"
@@ -57,9 +69,7 @@
             "outputPath": "dist/dummy",
             "index": "projects/dummy/src/index.html",
             "browser": "projects/dummy/src/main.ts",
-            "polyfills": [
-              "zone.js"
-            ],
+            "polyfills": [],
             "tsConfig": "projects/dummy/tsconfig.app.json",
             "styles": [
               "projects/dummy/src/styles.css"
@@ -71,12 +81,6 @@
     }
   },
   "schematics": {
-    "@angular-eslint/schematics:application": {
-      "setParserOptionsProject": true
-    },
-    "@angular-eslint/schematics:library": {
-      "setParserOptionsProject": true
-    },
     "@schematics/angular:component": {
       "type": "component"
     },

@@ -451,7 +451,7 @@ function($sabloApplication, $sabloConstants, $log, $formatterUtils, $injector, $
                         // skip pinned (footer) nodes
 						if(params.node.rowPinned) return "";
                         var rowData = params.data || Object.assign(params.node.groupData, params.node.aggData);
-                        return rowStyleClassFunc(params.rowIndex, rowData, params.event, params.node.group);
+                        return rowStyleClassFunc(params.rowIndex, rowData, params.event, params.node.group, params);
                     };
                 }
 
@@ -1185,6 +1185,7 @@ function($sabloApplication, $sabloConstants, $log, $formatterUtils, $injector, $
                             if(!colGroups[column.headerGroup]) {
                                 colGroups[column.headerGroup] = {}
                                 colGroups[column.headerGroup]['headerClass'] = column.headerGroupStyleClass;
+                                colGroups[column.headerGroup]['marryChildren'] = column.headerGroupKeepColumnsTogether;
                                 colGroups[column.headerGroup]['children'] = [];
 
                             }
@@ -1199,6 +1200,7 @@ function($sabloApplication, $sabloConstants, $log, $formatterUtils, $injector, $
                         var group = {};
                         group.headerName = groupName;
                         group.headerClass = colGroups[groupName]['headerClass']; 
+                        group.marryChildren = colGroups[groupName]['marryChildren'];
                         group.children = colGroups[groupName]['children'];
                         colDefs.push(group);
                     }
