@@ -638,3 +638,141 @@ describe('DataGrid - headerGroupKeepColumnsTogether -> marryChildren (SVYX-1144)
         expect(findGroupDef(colDefs, 'G2').marryChildren).toBe(false);
     });
 });
+
+describe('DataGrid - expand and collapse all groups (ECS-2940)', () => {
+    let component: DataGrid;
+    let nodes: any[];
+    let purgeSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(async () => {
+        await TestBed.configureTestingModule({
+            imports: [ServoyPublicTestingModule, FormsModule, AgGridModule, DataGrid],
+            schemas: [NO_ERRORS_SCHEMA],
+            teardown: { destroyAfterEach: false }
+        }).compileComponents();
+
+        const fixture = TestBed.createComponent(DataGrid);
+        component = fixture.componentInstance;
+        fixture.componentRef.setInput('servoyApi', new ServoyApiTesting() as any);
+
+        component.agGridOptions = component.agGridOptions || {} as any;
+        component.isGridReady = true;
+
+        nodes = [
+            { group: true, expanded: false, setExpanded: vi.fn() },
+            { group: true, expanded: true, setExpanded: vi.fn() },
+            { group: false, expanded: false, setExpanded: vi.fn() }
+        ];
+        vi.spyOn(component, 'isTableGrouped').mockReturnValue(true);
+        purgeSpy = vi.spyOn(component, 'purge').mockImplementation(() => {});
+    });
+
+    function withApi(callback: () => void) {
+        // mocked only for this call, so the grid's own lifecycle keeps the real api
+        const api = { forEachNode: (nodeCallback: (node: any) => void) => nodes.forEach(nodeCallback) };
+        const agGridSpy = vi.spyOn(component, 'agGrid').mockReturnValue({ api } as any);
+        callback();
+        agGridSpy.mockRestore();
+    }
+
+    describe('toggleAllGroups', () => {
+        it('expands all groups when no group is expanded', () => {
+            const expandSpy = vi.spyOn(component, 'expandAllGroups').mockImplementation(() => {});
+            component.hasExpandedGroups.set(false);
+
+            component.toggleAllGroups();
+
+            expect(expandSpy).toHaveBeenCalled();
+        });
+
+        it('collapses all groups when a group is expanded', () => {
+            const collapseSpy = vi.spyOn(component, 'collapseAllGroups').mockImplementation(() => {});
+            component.hasExpandedGroups.set(true);
+
+            component.toggleAllGroups();
+
+            expect(collapseSpy).toHaveBeenCalled();
+        });
+    });
+
+    describe('getExpandAllGroupsText', () => {
+        it('names the action the button runs, from the localeText', () => {
+            component.agGridOptions['localeText'] = { expandAll: 'Alles openen', collapseAll: 'Alles sluiten' };
+
+            component.hasExpandedGroups.set(false);
+            expect(component.getExpandAllGroupsText()).toBe('Alles openen');
+            component.hasExpandedGroups.set(true);
+            expect(component.getExpandAllGroupsText()).toBe('Alles sluiten');
+        });
+    });
+
+    describe('refreshHasExpandedGroups', () => {
+        it('is true while a loaded group is expanded', () => {
+            withApi(() => component.refreshHasExpandedGroups());
+
+            expect(component.hasExpandedGroups()).toBe(true);
+        });
+
+        it('is false when no loaded group is expanded', () => {
+            nodes[1].expanded = false;
+
+            withApi(() => component.refreshHasExpandedGroups());
+
+            expect(component.hasExpandedGroups()).toBe(false);
+        });
+    });
+
+    describe('placeExpandAllGroupsButton', () => {
+        it('puts the button in the row group panel and back again when aggrid rebuilds the panel', async () => {
+            const gridElement = document.createElement('div');
+            gridElement.innerHTML = '<div class="ag-column-drop-wrapper"><div class="ag-column-drop ag-column-drop-horizontal">'
+                + '<div class="ag-column-drop-title-bar"></div></div></div>';
+            const button = document.createElement('button');
+            vi.spyOn(component, 'agGridElementRef').mockReturnValue({ nativeElement: gridElement } as any);
+            vi.spyOn(component, 'expandAllGroupsButtonRef').mockReturnValue({ nativeElement: button } as any);
+
+            component.placeExpandAllGroupsButton();
+
+            expect(button.parentElement!.classList.contains('ag-column-drop-title-bar')).toBe(true);
+            expect(button.style.display).toBe('inline-flex');
+            // the button sits next to the panel icon, not below it
+            expect(button.parentElement!.style.display).toBe('flex');
+
+            // aggrid's refreshGui replaces the title bar
+            const panel = gridElement.querySelector('.ag-column-drop-horizontal')!;
+            panel.innerHTML = '';
+            const newTitleBar = document.createElement('div');
+            newTitleBar.className = 'ag-column-drop-title-bar';
+            panel.appendChild(newTitleBar);
+            await new Promise((resolve) => setTimeout(resolve));
+
+            expect(button.parentElement).toBe(newTitleBar);
+            (component as any).expandAllGroupsButtonObserver.disconnect();
+        });
+    });
+
+    describe('expandAllGroups', () => {
+        it('expands the loaded groups that are collapsed and keeps expanding the groups that load', () => {
+            withApi(() => component.expandAllGroups());
+
+            expect(nodes[0].setExpanded).toHaveBeenCalledWith(true);
+            expect(nodes[1].setExpanded).not.toHaveBeenCalled();
+            expect(nodes[2].setExpanded).not.toHaveBeenCalled();
+            expect(component.isExpandAllGroups).toBe(true);
+            expect(component.hasExpandedGroups()).toBe(true);
+        });
+    });
+
+    describe('collapseAllGroups', () => {
+        it('clears the expanded state, stops expanding loaded groups and reloads the groups', () => {
+            component.isExpandAllGroups = true;
+
+            component.collapseAllGroups();
+
+            expect(component.isExpandAllGroups).toBe(false);
+            expect(component.hasExpandedGroups()).toBe(false);
+            expect(component.__internalExpandedState()).toEqual({});
+            expect(purgeSpy).toHaveBeenCalled();
+        });
+    });
+});

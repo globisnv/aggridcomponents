@@ -216,6 +216,7 @@ export class DataGrid extends NGGridDirective {
 	/** one entry per entry in columns; set means design mode is on, null means off */
 	readonly designInfo = input<DesignColumnInfo[]>(undefined as any);
 	readonly designHoverCardRef = viewChild<ElementRef<HTMLElement>>('designHoverCard');
+	readonly expandAllGroupsButtonRef = viewChild<ElementRef<HTMLElement>>('expandAllGroupsButton');
 	/** the column being hovered right now, null when the card is not showing */
 	readonly designCard = signal<DesignColumnInfo | null>(null);
 	/** label of the row copied last, so only that row's button shows the check */
@@ -272,6 +273,11 @@ export class DataGrid extends NGGridDirective {
 	__internalExpandedState = signal<{
 		[key: string]: unknown;
 	}>(undefined as any);
+	/** true while every group that loads is expanded, see expandAllGroups */
+	isExpandAllGroups = false;
+	/** true when a loaded group is expanded, so the expand all groups button collapses them */
+	hasExpandedGroups = signal(false);
+	private expandAllGroupsButtonObserver: MutationObserver | null = null;
 
 	foundset!: FoundsetManager;
 	groupManager!: GroupManager;
@@ -527,6 +533,7 @@ export class DataGrid extends NGGridDirective {
 				this.log.debug('gridReady');
 				const jsEvent = this.createJSEvent();
 				this.isGridReady = true;
+				this.placeExpandAllGroupsButton();
 
 				// default sort order
 				if ((this.agGridOptions as any)['enableServerSideSorting']) {
@@ -1577,6 +1584,7 @@ export class DataGrid extends NGGridDirective {
 
 	ngOnDestroy() {
 		super.ngOnDestroy();
+		if (this.expandAllGroupsButtonObserver) this.expandAllGroupsButtonObserver.disconnect();
 		// clear all foundsets
 		this.groupManager.removeFoundsetRefAtLevel(0);
 		if (this.removeChangeListenerFunction) this.removeChangeListenerFunction();
@@ -4475,6 +4483,7 @@ export class DataGrid extends NGGridDirective {
 	onColumnRowGroupChanged(event: any) {
 		// return;
 		const rowGroupCols = this.getRowGroupColumns();
+		this.placeExpandAllGroupsButton();
 
 		// FIXME why does give an error,  i don't uderstand
 		let i: any;
@@ -4489,6 +4498,8 @@ export class DataGrid extends NGGridDirective {
 				this.agGrid()!.api.deselectAll();
 			}
 			this.isGroupView = false;
+			this.isExpandAllGroups = false;
+			this.hasExpandedGroups.set(false);
 			this.state.rootGroupSort = null;
 
 			// TODO clear group when changed
@@ -4590,8 +4601,12 @@ export class DataGrid extends NGGridDirective {
 		// Persist the state of an expanded row
 		if (isExpanded) { // add expanded node to cache
 			this.addRowExpandedState(groupKeys);
+			this.hasExpandedGroups.set(true);
 		} else { // remove expanded node from cache when collapsed
 			this.removeRowExpandedState(groupKeys);
+			// a group the user closes stays closed, so the groups that load from now on keep their own state
+			this.isExpandAllGroups = false;
+			this.refreshHasExpandedGroups();
 		}
 
 		const onRowGroupOpened = this.onRowGroupOpened();
@@ -5152,10 +5167,96 @@ export class DataGrid extends NGGridDirective {
 	 * @param groups an object like {expandedGroupName1:{}, expandedGroupName2:{expandedSubGroupName2_1:{}, expandedSubGroupName2_2:{}}}
 	 */
 	setExpandedGroups(groups: any) {
+		this.isExpandAllGroups = false;
+		this.hasExpandedGroups.set(!!groups && Object.keys(groups).length > 0);
 		this.__internalExpandedState.set(groups);
 		this._internalExpandedStateChange.emit(this.__internalExpandedState());
 		if (this.isGridReady && this.isTableGrouped()) {
 			this.purge();
+		}
+	}
+
+	/**
+	 * Expands all groups on all levels. Groups that are not loaded yet are expanded when they load,
+	 * until the groups are collapsed again, by collapseAllGroups or by the user closing a group.
+	 */
+	expandAllGroups() {
+		this.isExpandAllGroups = true;
+		if (this.isGridReady && this.isTableGrouped()) {
+			// the subgroups of these groups are expanded when their rows load, see the getData success callback
+			this.agGrid()!.api.forEachNode((node: any) => {
+				if (node.group && !node.expanded) {
+					node.setExpanded(true);
+				}
+			});
+		}
+		this.hasExpandedGroups.set(true);
+	}
+
+	/**
+	 * Collapses all groups on all levels.
+	 */
+	collapseAllGroups() {
+		this.setExpandedGroups({});
+	}
+
+	/**
+	 * ECS-2940 - the button in the row group panel: collapses all groups when one is expanded, else expands them all
+	 */
+	toggleAllGroups() {
+		if (this.hasExpandedGroups()) {
+			this.collapseAllGroups();
+		} else {
+			this.expandAllGroups();
+		}
+	}
+
+	getExpandAllGroupsText() {
+		const localeText = this.agGridOptions && this.agGridOptions['localeText'] || {};
+		return this.hasExpandedGroups() ? localeText['collapseAll'] || 'Collapse All' : localeText['expandAll'] || 'Expand All';
+	}
+
+	/**
+	 * true when one of the loaded groups is expanded
+	 */
+	refreshHasExpandedGroups() {
+		let hasExpandedGroups = false;
+		if (this.isGridReady && this.isTableGrouped()) {
+			this.agGrid()!.api.forEachNode((node: any) => {
+				if (node.group && node.expanded) {
+					hasExpandedGroups = true;
+				}
+			});
+		}
+		this.hasExpandedGroups.set(hasExpandedGroups);
+	}
+
+	/**
+	 * Puts the expand all groups button in the row group panel, left of the grouped columns.
+	 * aggrid rebuilds the panel each time the grouping changes, so the button is put back on each change of the panel.
+	 */
+	placeExpandAllGroupsButton() {
+		const button = this.expandAllGroupsButtonRef()?.nativeElement;
+		const gridElement = this.agGridElementRef()?.nativeElement as HTMLElement;
+		// the first drop zone in the wrapper is the row group panel, the pivot panel follows it
+		const panelWrapper = gridElement?.querySelector('.ag-column-drop-wrapper');
+		if (!button || !panelWrapper) {
+			return;
+		}
+		const place = () => {
+			const titleBar = panelWrapper.querySelector('.ag-column-drop-horizontal .ag-column-drop-title-bar');
+			if (titleBar && button.parentNode !== titleBar) {
+				// the horizontal title bar is no flex row like the vertical one, so the button would wrap below the icon
+				(titleBar as HTMLElement).style.display = 'flex';
+				(titleBar as HTMLElement).style.alignItems = 'center';
+				titleBar.appendChild(button);
+				button.style.display = 'inline-flex';
+			}
+		};
+		place();
+		if (!this.expandAllGroupsButtonObserver) {
+			this.expandAllGroupsButtonObserver = new MutationObserver(place);
+			this.expandAllGroupsButtonObserver.observe(panelWrapper, { childList: true, subtree: true });
 		}
 	}
 
@@ -5946,7 +6047,8 @@ class FoundsetDatasource implements IServerSideDatasource {
 					let expandedState = _this.dataGrid._internalExpandedState();
 					const groupFields = _this.dataGrid.state.expanded.fields;
 
-					if (resultForGrid && resultForGrid.length && _this.dataGrid.isTableGrouped() && groupFields && expandedState) {
+					const isExpandAllGroups = _this.dataGrid.isExpandAllGroups;
+					if (resultForGrid && resultForGrid.length && _this.dataGrid.isTableGrouped() && groupFields && (expandedState || isExpandAllGroups)) {
 
 						// get the fs manager for the group
 						//var foundsetRefManager = getFoundsetManagerByFoundsetUUID(resultForGrid[0]._svyFoundsetUUID);
@@ -6000,7 +6102,7 @@ class FoundsetDatasource implements IServerSideDatasource {
 								}
 
 								// expand the node
-								if (isExpanded) {
+								if (isExpanded || (isExpandAllGroups && node.group)) {
 									node.setExpanded(true);
 								}
 
