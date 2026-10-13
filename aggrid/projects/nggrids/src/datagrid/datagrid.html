@@ -6,6 +6,11 @@
     [sabloTabseq]="tabSeq()"
     [gridOptions]="agGridOptions">
   </ag-grid-angular>
+  <!-- ECS-2940 - moved into the row group panel by placeExpandAllGroupsButton(), hidden until it is there -->
+  <button #expandAllGroupsButton type="button" class="ag-table-expand-all-groups" style="display: none;"
+    [svyTooltip]="getExpandAllGroupsText()" [attr.aria-label]="getExpandAllGroupsText()" (click)="toggleAllGroups()">
+    <span [class]="'ag-icon ' + (hasExpandedGroups() ? 'ag-icon-tree-open' : 'ag-icon-tree-closed')"></span>
+  </button>
   @if (isGroupView) {
     <span [class]="'ag-table-info' + (dirtyCache ? ' ag-table-info-notify' : '')" [svyTooltip]="tooltipTextRefreshData()">
       <i [class]="getIconRefreshData()" (click)="purge()"></i>
