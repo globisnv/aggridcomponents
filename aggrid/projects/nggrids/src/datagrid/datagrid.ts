@@ -1538,7 +1538,7 @@ export class DataGrid extends NGGridDirective {
 							if (prop === 'headerTitle') {
 								this.handleColumnHeader(i, 'headerName', newPropertyValue);
 							} else if (prop === 'headerTooltip') {
-								this.handleColumnHeader(i, prop, newPropertyValue);
+								this.handleColumnHeader(i, prop, this.getHeaderTooltip(change.currentValue[i]));
 							} else if (prop === 'footerText') {
 								this.handleColumnFooterText();
 							} else if (prop === 'headerText') {
@@ -1856,7 +1856,7 @@ export class DataGrid extends NGGridDirective {
 			colDef = {
 				headerName: column.headerTitle ? column.headerTitle : '',
 				field,
-				headerTooltip: column.headerTooltip ? column.headerTooltip : null,
+				headerTooltip: this.getHeaderTooltip(column),
 				cellRenderer: (params: any) => this.cellRenderer(params)
 			};
 
@@ -3929,6 +3929,15 @@ export class DataGrid extends NGGridDirective {
 			return checkboxEditorIconConfig && (checkboxEditorIconConfig as any)['iconEditorUnchecked'] && (checkboxEditorIconConfig as any)['iconEditorUnchecked'] !== 'glyphicon glyphicon-unchecked' ?
 				(checkboxEditorIconConfig as any)['iconEditorUnchecked'] : 'far fa-square';
 		}
+	}
+
+	/**
+	 * The column's own headerTooltip, else its header title, so a header cut off by the column width can still be
+	 * read on hover. A column without a header title, such as an icon or button column, gets no tooltip.
+	 */
+	getHeaderTooltip(column: any): string | null {
+		if (column.headerTooltip) return column.headerTooltip;
+		return column.headerTitle && column.headerTitle.trim() ? column.headerTitle : null;
 	}
 
 	handleColumnHeader(index: any, property: any, newValue: any) {
