@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { ServoyPublicTestingModule, ServoyApiTesting } from '@servoy/public';
-import { DataGrid, DataGridColumn } from './datagrid';
+import { DataGrid, DataGridColumn, NULL_VALUE, isNullGroupKey } from './datagrid';
 import { SortChangedEvent } from 'ag-grid-community';
 import { AgGridModule } from 'ag-grid-angular';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -696,13 +696,11 @@ describe('DataGrid - expand and collapse all groups (ECS-2940)', () => {
     });
 
     describe('getExpandAllGroupsText', () => {
-        it('names the action the button runs, from the localeText', () => {
-            component.agGridOptions['localeText'] = { expandAll: 'Alles openen', collapseAll: 'Alles sluiten' };
-
+        it('names the action the button runs', () => {
             component.hasExpandedGroups.set(false);
-            expect(component.getExpandAllGroupsText()).toBe('Alles openen');
+            expect(component.getExpandAllGroupsText()).toBe('Expand all row groups');
             component.hasExpandedGroups.set(true);
-            expect(component.getExpandAllGroupsText()).toBe('Alles sluiten');
+            expect(component.getExpandAllGroupsText()).toBe('Collapse all row groups');
         });
     });
 
@@ -774,5 +772,19 @@ describe('DataGrid - expand and collapse all groups (ECS-2940)', () => {
             expect(component.__internalExpandedState()).toEqual({});
             expect(purgeSpy).toHaveBeenCalled();
         });
+    });
+});
+
+describe('isNullGroupKey (ECS-2940)', () => {
+    it('is true for the group of the null values', () => {
+        expect(isNullGroupKey(NULL_VALUE)).toBe(true);
+        expect(isNullGroupKey('')).toBe(true);
+    });
+
+    it('is false for 0 and false, so a checkbox or boolean group keeps its value', () => {
+        expect(isNullGroupKey(0)).toBe(false);
+        expect(isNullGroupKey(false)).toBe(false);
+        expect(isNullGroupKey('0')).toBe(false);
+        expect(isNullGroupKey(1)).toBe(false);
     });
 });
