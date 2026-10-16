@@ -5221,8 +5221,7 @@ export class DataGrid extends NGGridDirective {
 	}
 
 	getExpandAllGroupsText() {
-		const localeText = this.agGridOptions && this.agGridOptions['localeText'] || {};
-		return this.hasExpandedGroups() ? localeText['collapseAll'] || 'Collapse All' : localeText['expandAll'] || 'Expand All';
+		return this.hasExpandedGroups() ? 'Collapse all row groups' : 'Expand all row groups';
 	}
 
 	/**
@@ -5947,6 +5946,14 @@ class FoundsetServer {
 	}
 }
 
+/**
+ * ECS-2940 - true when the group key is the group of the null values: NULL_VALUE itself, or its string form ''.
+ * Not a loose == NULL_VALUE, that is also true for 0 and false ('' == 0), so their group would query the null values.
+ */
+export function isNullGroupKey(groupKey: any) {
+	return groupKey === NULL_VALUE || groupKey === '';
+}
+
 class FoundsetDatasource implements IServerSideDatasource {
 
 	constructor(public dataGrid: DataGrid, public foundsetServer: any) {
@@ -5974,7 +5981,7 @@ class FoundsetDatasource implements IServerSideDatasource {
 			currentNode = currentNode?.parent as any;
 		}
 		for (let i = 0; i < groupKeys.length; i++) {
-			if (groupKeys[i] == NULL_VALUE) {
+			if (isNullGroupKey(groupKeys[i])) {
 				groupKeys[i] = null;	// reset to real null, so we use the right value for grouping
 			}
 			if (groupKeys[i] !== null) {
