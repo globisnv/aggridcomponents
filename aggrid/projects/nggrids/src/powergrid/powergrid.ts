@@ -944,8 +944,11 @@ export class PowerGrid extends NGGridDirective {
                         if (this.isGridReady && change.currentValue) {
                             this.agGrid()!.api.setFilterModel(change.currentValue);
                             this.agGrid()!.api.onFilterChanged();
-                            this.__internalFilterModel.set(null);
-                            this._internalFilterModelChange.emit(this.__internalFilterModel());
+                            // [ECS-3053] reset after change detection, resetting during it causes errors when loading grids
+                            Promise.resolve().then(() => {
+                                this.__internalFilterModel.set(null);
+                                this._internalFilterModelChange.emit(null);
+                            });
                         }
                         break;
                     case '_internalAggCustomFuncs':
