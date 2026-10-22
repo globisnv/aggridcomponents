@@ -794,6 +794,9 @@ export class DataGrid extends NGGridDirective {
 				}
 			},
 			onFilterChanged: () => {
+				// [GLO-2226] clear selection so multi select does not keep rows that are filtered out
+				this.selectionEvent = null;
+				this.agGrid()!.api.deselectAll();
 				this.storeColumnsState();
 			},
 			onSortChanged: (event: SortChangedEvent) => {
