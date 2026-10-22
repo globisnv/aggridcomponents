@@ -66,6 +66,7 @@ export class DateFilter extends FilterDirective {
     readonly filterdatetimepickerToRef = viewChild<ElementRef>('filterdatetimepickerTo');
     picker!: TempusDominus;
     pickerTo!: TempusDominus;
+    private clearingPicker = false;
 
     readonly config: Options = {
         allowInputToggle: false,
@@ -219,7 +220,7 @@ export class DateFilter extends FilterDirective {
           return null;
       }) as any;
       thePicker.subscribe(Namespace.events.change, (event) => {
-        if (thePicker) {
+        if (thePicker && !this.clearingPicker) {
           thePicker.hide(); // Close the date picker
           this.valueChanged();
         }
@@ -239,6 +240,13 @@ export class DateFilter extends FilterDirective {
 
     setFilterUIValue(value: any) {
       this.elementRef()!.nativeElement.value = value;
+      if (!value) {
+        // [MOE-330] also clear the picker's selected date, otherwise re-entering the same date after a reset does not trigger a change
+        this.clearingPicker = true;
+        if (this.picker) this.picker.clear();
+        if (this.pickerTo) this.pickerTo.clear();
+        this.clearingPicker = false;
+      }
     }
 
     getFilterRealValue(second?: boolean): any {
