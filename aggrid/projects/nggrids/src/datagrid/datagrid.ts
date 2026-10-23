@@ -970,7 +970,8 @@ export class DataGrid extends NGGridDirective {
 						this.agGrid()!.api.setFocusedCell(rowIndex, colKey);
 					}, 0);
 				}
-				if (this.columnsToFitAfterRowsRendered) {
+				// wait for a row with data: after a (re)load the server side row model first creates loading rows without data
+				if (this.columnsToFitAfterRowsRendered && params.node.data) {
 					this.columnsToFitAfterRowsRendered = false;
 					this.setTimeout(() => {
 						this.sizeHeaderAndColumnsToFit(GRID_EVENT_TYPES.GRID_ROW_POST_CREATE);
@@ -1707,7 +1708,8 @@ export class DataGrid extends NGGridDirective {
 
 			}
 			if (this._columnsAutoSizing() !== 'NONE' && !this.agContinuousColumnsAutoSizing && !agColumnsAutoSizingOn &&
-				(eventType === GRID_EVENT_TYPES.GRID_READY || eventType === GRID_EVENT_TYPES.GRID_ROW_POST_CREATE) && agGrid!.api.getDisplayedRowCount() > 0) {
+				(eventType === GRID_EVENT_TYPES.GRID_READY || eventType === GRID_EVENT_TYPES.GRID_ROW_POST_CREATE) && agGrid!.api.getRenderedNodes().some(node => node.data)) {
+				// only stop auto sizing once real data was measured, loading rows have no data
 				this._columnsAutoSizing.set('NONE');
 				this.columnsAutoSizingChange.emit('NONE');
 			}
