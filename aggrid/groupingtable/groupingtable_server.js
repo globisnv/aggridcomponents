@@ -134,9 +134,17 @@ $scope.getGroupedFoundsetUUID = function(
 			for (let v = 0; v < valueColumns.length; v++) {
 				let valueDataprovider = $scope.model.columns[valueColumns[v].colIdx].dataprovider;
 				if (valueDataprovider && allGroupDataproviders.indexOf(valueDataprovider) == -1) {
-					let aggregate = getAggregate(getQBColumnForDataprovider(query, valueDataprovider), valueColumns[v].aggFunc);
-					if (aggregate) {
-						query.result.add(aggregate, getDataproviderNameForGroupingView(valueDataprovider));
+					// a dataprovider that is no database column (calculation, form variable) or a function that does not
+					// fit the column type would fail the whole group query, so such an aggregation is skipped
+					try {
+						let valueColumn = getQBColumnForDataprovider(query, valueDataprovider);
+						if (isAggregationAllowed(valueColumns[v].aggFunc, valueColumn.getTypeAsString())) {
+							query.result.add(getAggregate(valueColumn, valueColumns[v].aggFunc), getDataproviderNameForGroupingView(valueDataprovider));
+						} else {
+							log('Cannot aggregate ' + valueDataprovider + ' with ' + valueColumns[v].aggFunc, LOG_LEVEL.WARN);
+						}
+					} catch (e) {
+						log('Cannot aggregate ' + valueDataprovider + ': ' + e, LOG_LEVEL.WARN);
 					}
 				}
 			}
@@ -342,6 +350,24 @@ function getAggregate(qbColumn, aggFunc) {
 		case 'count': return qbColumn.count;
 	}
 	return null;
+}
+
+/**
+ * [ECS-2799] Whether the aggregation function fits the type of the column
+ *
+ * @param {String} aggFunc sum, avg, min, max or count
+ * @param {String} columnType the type of the column, as QBColumn.getTypeAsString() gives it
+ * @return {Boolean}
+ */
+function isAggregationAllowed(aggFunc, columnType) {
+	switch (aggFunc) {
+		case 'sum':
+		case 'avg': return columnType == 'INTEGER' || columnType == 'NUMBER';
+		case 'min':
+		case 'max': return columnType == 'INTEGER' || columnType == 'NUMBER' || columnType == 'DATETIME' || columnType == 'TEXT';
+		case 'count': return true;
+	}
+	return false;
 }
 
 /**

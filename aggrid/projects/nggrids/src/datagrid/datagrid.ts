@@ -9,7 +9,7 @@ import {
 import { ChangeDetectionStrategy, Component, ElementRef, Inject, Renderer2, SecurityContext, SimpleChanges, TemplateRef, DOCUMENT, computed, input, output, signal, viewChild } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { AgGridModule } from 'ag-grid-angular';
-import { LoggerFactory, ChangeType, IFoundset, FoundsetChangeEvent, Deferred, FormattingService, ServoyPublicService, JSEvent, PopupStateService, ServoyPublicModule } from '@servoy/public';
+import { LoggerFactory, ChangeType, IFoundset, FoundsetChangeEvent, Deferred, Format, FormattingService, ServoyPublicService, JSEvent, PopupStateService, ServoyPublicModule } from '@servoy/public';
 import { DatePicker } from '../editors/datepicker';
 import { FormEditor } from '../editors/formeditor';
 import { SelectEditor } from '../editors/selecteditor';
@@ -492,7 +492,8 @@ export class DataGrid extends NGGridDirective {
 						toolPanel: 'agColumnsToolPanel',
 						toolPanelParams: {
 							suppressRowGroups: toolPanelConfig ? toolPanelConfig.suppressRowGroups : false,
-							suppressValues: toolPanelConfig ? toolPanelConfig.suppressValues !== false : true,
+							// [ECS-2799] by default only a grid with group columns shows the Values section: a full width group row has no cell for an aggregation
+							suppressValues: toolPanelConfig && toolPanelConfig.suppressValues !== undefined ? toolPanelConfig.suppressValues : this.groupUseEntireRow(),
 							suppressPivots: true,
 							suppressPivotMode: true,
 							suppressSideButtons: toolPanelConfig ? toolPanelConfig.suppressSideButtons : false,
@@ -1648,6 +1649,12 @@ export class DataGrid extends NGGridDirective {
 		if (value && value.displayValue !== undefined) {
 			value = value.displayValue;
 		}
+		// [ECS-2799] the aggregation of a value column in a group row is a number (or date), also on a valuelist column
+		const aggFunc = params.node.group && params.column && params.column.getAggFunc ? params.column.getAggFunc() : null;
+		if (typeof aggFunc === 'string' && value != null && !params.node.rowPinned) {
+			const dataGrid = params.context.componentParent;
+			return dataGrid.formatAggregation(value, aggFunc, dataGrid.getColumn(params.column.colId));
+		}
 		// skip format for pinned rows (footer) and valuelist linked dp, they are always text
 		if (!params.node.rowPinned) {
 			const dataGrid = params.context.componentParent;
@@ -1665,6 +1672,39 @@ export class DataGrid extends NGGridDirective {
 			value = '';
 		}
 
+		return value;
+	}
+
+	/**
+	 * [ECS-2799] The aggregation functions a column with this filter type allows, null when it cannot be aggregated
+	 */
+	getAllowedAggFuncs(filterType: string): string[] | null {
+		switch (filterType) {
+			case 'NUMBER': return ['sum', 'avg', 'min', 'max', 'count'];
+			case 'DATE':
+			case 'TIME': return ['min', 'max', 'count'];
+			case 'TEXT':
+			case 'VALUELIST':
+			case 'RADIO': return ['count'];
+		}
+		return null;
+	}
+
+	/**
+	 * [ECS-2799] Formats the aggregation of a value column in a group row: a count as a whole number, the other
+	 * functions with the number or date format of the column, or with two decimals at most when it has none
+	 */
+	formatAggregation(value: any, aggFunc: string, column: any): string {
+		const format = column && !column.valuelist ? column.format : null;
+		if (aggFunc === 'count') {
+			return this.format(value, { type: 'INTEGER', display: '#,##0' } as Format, false);
+		}
+		if (format && (format.type === 'DATETIME' || format.type === 'NUMBER' || (format.type === 'INTEGER' && aggFunc !== 'avg'))) {
+			return this.format(value, format, false);
+		}
+		if (typeof value === 'number') {
+			return this.format(value, { type: 'NUMBER', display: '#,##0.##' } as Format, false);
+		}
 		return value;
 	}
 
@@ -1832,7 +1872,8 @@ export class DataGrid extends NGGridDirective {
 				if (dataGrid.agMainMenuItemsConfig[key]) items.push(key);
 			}
 		} else {
-			items = ['rowGroup', 'rowUnGroup'];
+			// [ECS-2799] a grid with group columns can aggregate columns in its group rows
+			items = dataGrid.groupUseEntireRow() ? ['rowGroup', 'rowUnGroup'] : ['rowGroup', 'rowUnGroup', 'valueAggSubMenu'];
 		}
 		const menuItems: any = [];
 		const customMainMenu = dataGrid.customMainMenu() ? dataGrid.customMainMenu() : dataGrid.registrationService.datagridService.customMainMenu;
@@ -1906,6 +1947,14 @@ export class DataGrid extends NGGridDirective {
 			// column grouping
 			colDef.enableRowGroup = this.enabled() && column.enableRowGroup && column.dataprovider !== undefined;
 			if (column.rowGroupIndex >= 0) colDef.rowGroupIndex = column.rowGroupIndex;
+
+			// [ECS-2799] a grid with group columns can aggregate its filterable columns in the group rows: the header filter
+			// queries the column, so the group query can aggregate it too, and the filter type says which functions fit
+			const allowedAggFuncs = this.getAllowedAggFuncs(column.filterType);
+			if (!this.groupUseEntireRow() && this.enabled() && column.dataprovider !== undefined && allowedAggFuncs) {
+				colDef.enableValue = true;
+				colDef.allowedAggFuncs = allowedAggFuncs;
+			}
 			if (column.width) {
 				colDef.width = column.width;
 				if (column.initialWidth === undefined) column.initialWidth = column.width;

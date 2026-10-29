@@ -853,7 +853,7 @@
 			"suppressColumnFilter": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
 			"suppressColumnSelectAll": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
 			"suppressColumnExpandAll": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
-			"suppressValues": {"type": "boolean", "default" : true, "tags" : {"scope": "design", "doc": "Hides the Values section, where the user aggregates the columns with columnDef.enableValue in the group rows"}}
+			"suppressValues": {"type": "boolean", "tags" : {"scope": "design", "doc": "Hides the Values section, where the user aggregates columns in the group rows. When not set, it is shown when the grid has group columns (groupUseEntireRow false)"}}
 		},
 		"mainMenuItemsConfig" : {
 			"sortAscending": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
