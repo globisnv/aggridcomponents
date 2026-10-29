@@ -492,7 +492,7 @@ export class DataGrid extends NGGridDirective {
 						toolPanel: 'agColumnsToolPanel',
 						toolPanelParams: {
 							suppressRowGroups: toolPanelConfig ? toolPanelConfig.suppressRowGroups : false,
-							suppressValues: true,
+							suppressValues: toolPanelConfig ? toolPanelConfig.suppressValues !== false : true,
 							suppressPivots: true,
 							suppressPivotMode: true,
 							suppressSideButtons: toolPanelConfig ? toolPanelConfig.suppressSideButtons : false,
@@ -570,6 +570,13 @@ export class DataGrid extends NGGridDirective {
 						this.setupHeaderCheckbox(true);
 					}
 					this.onColumnRowGroupChanged(params);
+				});
+
+				// [ECS-2799] the group foundsets hold the aggregations of the value columns, so reload the groups when those change
+				this.agGrid()!.api.addEventListener('columnValueChanged', () => {
+					if (this.isTableGrouped()) {
+						this.purge();
+					}
 				});
 
 				// listen to group collapsed
@@ -702,7 +709,6 @@ export class DataGrid extends NGGridDirective {
 			suppressClickEdit: false,
 			enableGroupEdit: false,
 			groupDisplayType: this.groupUseEntireRow() ? 'groupRows' : 'multipleColumns',
-			suppressAggFuncInHeader: true, // TODO support aggregations
 
 			suppressColumnVirtualisation: hasHeaderCheckboxColumn,
 			suppressScrollOnNewData: true,
@@ -893,6 +899,9 @@ export class DataGrid extends NGGridDirective {
 								column.width = column.initialWidth;
 							}
 						}
+						// [ECS-2799] updateColumnDefs restores the stored column state: store what the column menu just
+						// changed first, such as a value aggregation, else the restore undoes it
+						this.storeColumnsState();
 						this.updateColumnDefs();
 					}
 					const element = this.agGridElementRef()!.nativeElement;
@@ -6536,8 +6545,17 @@ class GroupManager {
 			}
 		}
 
+		// [ECS-2799] the aggregation of each value column, computed in the group query
+		const valueColumns: any[] = [];
+		for (const valueColumn of this.dataGrid.agGrid()!.api.getValueColumns()) {
+			const valueColumnIdx = this.dataGrid.getColumnIndex(valueColumn.getColId());
+			if (valueColumnIdx > -1 && typeof valueColumn.getAggFunc() === 'string') {
+				valueColumns.push({ colIdx: valueColumnIdx, aggFunc: valueColumn.getAggFunc() });
+			}
+		}
+
 		const childFoundsetPromise = this.dataGrid.servoyApi().callServerSideApi('getGroupedFoundsetUUID',
-			[groupColumns, groupKeys, idForFoundsets, sort, this.dataGrid.filterModel, hasRowStyleClassDataprovider, sortColumns]);
+			[groupColumns, groupKeys, idForFoundsets, sort, this.dataGrid.filterModel, hasRowStyleClassDataprovider, sortColumns, valueColumns]);
 
 		(childFoundsetPromise as any).then((childFoundsetUUID: any) => {
 			this.dataGrid.log.debug(childFoundsetUUID);

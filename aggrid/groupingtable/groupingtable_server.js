@@ -8,7 +8,7 @@ var appliedFilter = null;
  *
  * */
 $scope.getGroupedFoundsetUUID = function(
-	groupColumns, groupKeys, idForFoundsets, sort, sFilterModel, hasRowStyleClassDataprovider, sortColumns) {
+	groupColumns, groupKeys, idForFoundsets, sort, sFilterModel, hasRowStyleClassDataprovider, sortColumns, valueColumns) {
 	log('START SERVER SIDE ------------------------------------------ ', LOG_LEVEL.WARN);
 
 	// root is the parent
@@ -126,7 +126,20 @@ $scope.getGroupedFoundsetUUID = function(
 				query.result.add(compositeKey.count.distinct, "svycount");
 			}
 		} else {
-			query.result.add(query.aggregates.count(), "svycount"); 
+			query.result.add(query.aggregates.count(), "svycount");
+		}
+
+		// [ECS-2799] the aggregation of each value column, named like the column so the group row shows it in that column
+		if (valueColumns) {
+			for (let v = 0; v < valueColumns.length; v++) {
+				let valueDataprovider = $scope.model.columns[valueColumns[v].colIdx].dataprovider;
+				if (valueDataprovider && allGroupDataproviders.indexOf(valueDataprovider) == -1) {
+					let aggregate = getAggregate(getQBColumnForDataprovider(query, valueDataprovider), valueColumns[v].aggFunc);
+					if (aggregate) {
+						query.result.add(aggregate, getDataproviderNameForGroupingView(valueDataprovider));
+					}
+				}
+			}
 		}
 
 		// Apply header filters to the count query so svycount reflects filtered data
@@ -311,6 +324,24 @@ $scope.cellClick = function(clicktype, foundsetindex, columnindex, record, event
 
 function getDataproviderNameForGroupingView(dataproviderName) {
 	return dataproviderName ? dataproviderName.replace(/\./g, '_') : dataproviderName;
+}
+
+/**
+ * [ECS-2799] The aggregate for the aggregation function of a value column
+ *
+ * @param {QBColumn} qbColumn
+ * @param {String} aggFunc sum, avg, min, max or count
+ * @return {QBColumn}
+ */
+function getAggregate(qbColumn, aggFunc) {
+	switch (aggFunc) {
+		case 'sum': return qbColumn.sum;
+		case 'avg': return qbColumn.avg;
+		case 'min': return qbColumn.min;
+		case 'max': return qbColumn.max;
+		case 'count': return qbColumn.count;
+	}
+	return null;
 }
 
 /**

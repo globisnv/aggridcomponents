@@ -852,7 +852,8 @@
 			"suppressSideButtons": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
 			"suppressColumnFilter": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
 			"suppressColumnSelectAll": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
-			"suppressColumnExpandAll": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}}
+			"suppressColumnExpandAll": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
+			"suppressValues": {"type": "boolean", "default" : true, "tags" : {"scope": "design", "doc": "Hides the Values section, where the user aggregates the columns with columnDef.enableValue in the group rows"}}
 		},
 		"mainMenuItemsConfig" : {
 			"sortAscending": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
