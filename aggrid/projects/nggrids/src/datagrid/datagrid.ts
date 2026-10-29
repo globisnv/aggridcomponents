@@ -2361,12 +2361,17 @@ export class DataGrid extends NGGridDirective {
 	sortRootForGroups(rowGroupCols: any[]): Promise<any> {
 		const agGridSortModel = this.getAgGridSortModel();
 		const sortModel: any[] = [];
+		const groupColumnIndexes: number[] = [];
 		for (const rowGroupCol of rowGroupCols) {
-			const groupSort = agGridSortModel.find((sm) => sm.colId === rowGroupCol.field);
+			// match on the column index, as getGroupedFoundsetUUID does for the direction of the groups: the sort
+			// model has the column id, rowGroupCol.field is the internal field id
+			const groupColumnIndex = this.getColumnIndex(rowGroupCol.field);
+			groupColumnIndexes.push(groupColumnIndex);
+			const groupSort = agGridSortModel.find((sm) => this.getColumnIndex(sm.colId) === groupColumnIndex);
 			sortModel.push({ colId: rowGroupCol.field, sort: groupSort ? groupSort.sort : 'asc' });
 		}
 		for (const sm of agGridSortModel) {
-			if (!sortModel.some((s) => s.colId === sm.colId)) sortModel.push(sm);
+			if (groupColumnIndexes.indexOf(this.getColumnIndex(sm.colId)) === -1) sortModel.push(sm);
 		}
 		const rootSort = this.getFoundsetSortModel(sortModel);
 		if (rootSort.sortString === this.foundset.getSortColumns()) {
