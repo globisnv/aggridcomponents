@@ -33,7 +33,7 @@ import { TimeFilter } from '../filters/timefilter';
 
 const TABLE_PROPERTIES_DEFAULTS = {
 	rowHeight: { gridOptionsProperty: 'rowHeight', default: 25 },
-	groupUseEntireRow: { gridOptionsProperty: 'groupUseEntireRow', default: true },
+	groupUseEntireRow: { gridOptionsProperty: 'groupUseEntireRow', default: false },
 	enableColumnMove: { gridOptionsProperty: 'suppressMovableColumns', default: true }
 };
 
