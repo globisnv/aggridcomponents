@@ -279,6 +279,24 @@ $scope.removeGroupedFoundsetUUID = function(parentFoundset) {
 	return false;
 }
 
+/**
+ * [ECS-2799] The rows of a group are a block of rows of the root foundset, which is sorted on the group columns while grouped.
+ * Returns where that block starts: the svycount of the groups before it, on each group level.
+ *
+ * @param {Array<JSFoundSet>} groupFoundsets the foundset of the group rows, for each level (top level first)
+ * @param {Array<Number>} groupIndexes the 0-based index of the group in that foundset, for each level
+ * @return {Number}
+ */
+$scope.getGroupRootOffset = function(groupFoundsets, groupIndexes) {
+	let offset = 0;
+	for (let i = 0; i < groupFoundsets.length; i++) {
+		for (let j = 1; j <= groupIndexes[i]; j++) {
+			offset += groupFoundsets[i].getRecord(j)['svycount'];
+		}
+	}
+	return offset;
+}
+
 $scope.cellClick = function(clicktype, foundsetindex, columnindex, record, event, dataTarget) {
 	if($scope.model.columns && (!$scope.model.columns[columnindex] || $scope.model.columns[columnindex].enabled === false)) return;
 

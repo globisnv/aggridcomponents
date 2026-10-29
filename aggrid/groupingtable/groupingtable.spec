@@ -648,6 +648,18 @@
             ],
 			"allowaccess" : "enabled,visible"
         },
+        "getGroupRootOffset" : {
+            "returns" : "int",
+            "parameters" : [{
+                    "name": "groupFoundsets",
+                    "type": "foundsetRef[]"
+                }, {
+                    "name": "groupIndexes",
+                    "type": "int[]"
+                }
+            ],
+			"allowaccess" : "enabled,visible"
+        },
 		"filterMyFoundset" : {
             "parameters" : [{
 					"name": "sFilterModel",
