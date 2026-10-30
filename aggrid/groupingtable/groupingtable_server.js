@@ -88,6 +88,7 @@ $scope.getGroupedFoundsetUUID = function(
 			query.result.add(groupColumn.cast('date'), getDataproviderNameForGroupingView(groupDataprovider));
 			query.groupBy.add(groupColumn.cast('date'));
 
+			query.sort.add(getNullsFirstSortKey(query, groupColumn.cast('date'), groupSortDirection));
 			if (groupSortDirection === 'desc') {
 				query.sort.add(groupColumn.cast('date').desc);
 			} else {
@@ -96,8 +97,9 @@ $scope.getGroupedFoundsetUUID = function(
 		}
 		else {
 			query.result.add(groupColumn, getDataproviderNameForGroupingView(groupDataprovider));
-			query.groupBy.add(groupColumn);	
+			query.groupBy.add(groupColumn);
 
+			query.sort.add(getNullsFirstSortKey(query, groupColumn, groupSortDirection));
 			if (groupSortDirection === 'desc') {
 				query.sort.add(groupColumn.desc);
 			} else {
@@ -332,6 +334,22 @@ $scope.cellClick = function(clicktype, foundsetindex, columnindex, record, event
 
 function getDataproviderNameForGroupingView(dataproviderName) {
 	return dataproviderName ? dataproviderName.replace(/\./g, '_') : dataproviderName;
+}
+
+/**
+ * [ECS-2799] The sort key that puts the null group where the root foundset has it. Foundsets sort nulls first ascending
+ * and last descending (sortingNullprecedence ascNullsFirst of the servers, like svy_db_convertQueryForPostgres and the
+ * indexes), while a query builder sort uses the database default. The rows of a group are a block of the root
+ * foundset, so the groups must be in its order.
+ *
+ * @param {QBSelect} query
+ * @param {QBColumn} groupExpression what the query groups by
+ * @param {String} direction asc or desc
+ * @return {QBSort}
+ */
+function getNullsFirstSortKey(query, groupExpression, direction) {
+	const nullKey = direction === 'desc' ? 1 : 0;
+	return query.case.when(groupExpression.isNull).then(nullKey).else(1 - nullKey).asc;
 }
 
 /**
