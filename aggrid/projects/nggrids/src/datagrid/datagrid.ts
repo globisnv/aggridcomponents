@@ -2461,6 +2461,63 @@ export class DataGrid extends NGGridDirective {
 	}
 
 	/**
+	 * [ECS-2799] Whether all rows loaded for a group have its key in each group column. They do not when the root
+	 * foundset is sorted differently than the groups (e.g. another null precedence) or changed after the groups were counted.
+	 */
+	isRowsOfGroup(rows: any[], rowGroupCols: any[], groupKeys: any[]): boolean {
+		for (const row of rows) {
+			for (let i = 0; i < rowGroupCols.length; i++) {
+				const field = rowGroupCols[i].field;
+				const rowValue = row['_unresolved_' + field] !== undefined ? row['_unresolved_' + field] : row[field];
+				if (!this.isSameGroupKey(rowValue, groupKeys[i])) {
+					this.log.warn('Row ' + row._svyFoundsetIndex + ' has ' + rowGroupCols[i].displayName + ' ' + JSON.stringify(rowValue) + ', not the key of its group ' + JSON.stringify(groupKeys[i]));
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * [ECS-2799] Compares the value of a row with the key of a group, both as real value; null and '' are the same
+	 * (see isNullGroupKey). A day of a timestamp column is not compared: the time zones of server and client make the day
+	 * of a timestamp uncertain here.
+	 */
+	isSameGroupKey(rowValue: any, groupKey: any): boolean {
+		const value = rowValue && typeof rowValue === 'object' && 'realValue' in rowValue ? rowValue.realValue : rowValue;
+		const key = groupKey && typeof groupKey === 'object' && 'realValue' in groupKey ? groupKey.realValue : groupKey;
+		if (value === null || value === undefined || value === '') {
+			return key === null || key === undefined || key === '';
+		}
+		if (key === null || key === undefined || key === '') {
+			return false;
+		}
+		if (value instanceof Date || key instanceof Date) {
+			return true;
+		}
+		return String(value) === String(key);
+	}
+
+	/** [ECS-2799] true once the groups were reloaded for rows of another group, until the grouping changes */
+	private rowsOfOtherGroupReloaded = false;
+
+	/**
+	 * [ECS-2799] The rows loaded for a group belong to another group: reload the groups once, the data may have changed
+	 * since the groups were counted. When it happens again, ungroup instead of showing rows under the wrong group.
+	 */
+	onRowsOfOtherGroup(groupKeys: any[]) {
+		if (!this.rowsOfOtherGroupReloaded) {
+			this.rowsOfOtherGroupReloaded = true;
+			this.log.warn('The rows of group ' + JSON.stringify(groupKeys) + ' belong to another group, reloading the groups');
+			this.purge();
+		} else {
+			this.log.error('The rows of group ' + JSON.stringify(groupKeys) + ' belong to another group again, ungrouping: '
+				+ 'the root foundset is not sorted like the groups (sorting null precedence, ignore case)');
+			this.agGrid()!.api.setRowGroupColumns([]);
+		}
+	}
+
+	/**
 	 * Returns the group hierarchy for the given node
 	 *
 	 * @private
@@ -4676,6 +4733,8 @@ export class DataGrid extends NGGridDirective {
 	onColumnRowGroupChanged(event: any) {
 		// return;
 		const rowGroupCols = this.getRowGroupColumns();
+		// [ECS-2799] another grouping gets its own reload for rows of another group
+		this.rowsOfOtherGroupReloaded = false;
 		this.placeExpandAllGroupsButton();
 
 		// FIXME why does give an error,  i don't uderstand
@@ -5938,7 +5997,7 @@ class FoundsetServer {
 		// [ECS-2799] the rows of a group are rows of the root foundset, so selecting, clicking and editing them
 		// works on the records of the form, as in the ungrouped grid
 		if (rowGroupCols.length > 0 && groupKeys.length === rowGroupCols.length && groupNodes) {
-			Promise.all(allPromises).then(() => this.getGroupRowsFromRoot(request, rowGroupCols, groupNodes, callback)).catch((e) => this.getFoundsetRefError(e));
+			Promise.all(allPromises).then(() => this.getGroupRowsFromRoot(request, rowGroupCols, groupKeys, groupNodes, callback)).catch((e) => this.getFoundsetRefError(e));
 			return;
 		}
 
@@ -6076,7 +6135,7 @@ class FoundsetServer {
 	 * [ECS-2799] Loads the rows of a group from the root foundset. Sorted on the group columns, the rows of a group
 	 * are the block of root rows after the rows of the groups before it.
 	 */
-	getGroupRowsFromRoot(request: any, rowGroupCols: any, groupNodes: any[], callback: any) {
+	getGroupRowsFromRoot(request: any, rowGroupCols: any, groupKeys: any[], groupNodes: any[], callback: any) {
 		const dataGrid = this.dataGrid;
 		const count = groupNodes[groupNodes.length - 1].data['svycount'];
 		dataGrid.groupRowsFromRootQueue = dataGrid.groupRowsFromRootQueue.then(() => new Promise<void>((resolve) => {
@@ -6097,7 +6156,14 @@ class FoundsetServer {
 				// load the whole block, getDataFromFoundset sizes the viewport on it; the rows after the group belong to the next group
 				this.getDataFromFoundset(dataGrid.foundset, { startRow: offset + request.startRow, endRow: offset + request.endRow }, (rows: any) => {
 					resolve();
-					callback(rows.slice(0, groupRowCount), count);
+					const groupRows = rows.slice(0, groupRowCount);
+					// rows of another group mean that the root foundset is not in the order of the groups
+					if (!dataGrid.isRowsOfGroup(groupRows, rowGroupCols, groupKeys)) {
+						callback([], 0);
+						dataGrid.onRowsOfOtherGroup(groupKeys);
+						return;
+					}
+					callback(groupRows, count);
 				}, fail);
 			}).catch(fail);
 		}));
