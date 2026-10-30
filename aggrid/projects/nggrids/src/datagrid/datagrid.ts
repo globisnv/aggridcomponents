@@ -9,7 +9,7 @@ import {
 import { ChangeDetectionStrategy, Component, ElementRef, Inject, Renderer2, SecurityContext, SimpleChanges, TemplateRef, DOCUMENT, computed, input, output, signal, viewChild } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { AgGridModule } from 'ag-grid-angular';
-import { LoggerFactory, ChangeType, IFoundset, FoundsetChangeEvent, Deferred, FormattingService, ServoyPublicService, JSEvent, PopupStateService, ServoyPublicModule } from '@servoy/public';
+import { LoggerFactory, ChangeType, IFoundset, FoundsetChangeEvent, Deferred, Format, FormattingService, ServoyPublicService, JSEvent, PopupStateService, ServoyPublicModule } from '@servoy/public';
 import { DatePicker } from '../editors/datepicker';
 import { FormEditor } from '../editors/formeditor';
 import { SelectEditor } from '../editors/selecteditor';
@@ -33,7 +33,7 @@ import { TimeFilter } from '../filters/timefilter';
 
 const TABLE_PROPERTIES_DEFAULTS = {
 	rowHeight: { gridOptionsProperty: 'rowHeight', default: 25 },
-	groupUseEntireRow: { gridOptionsProperty: 'groupUseEntireRow', default: true },
+	groupUseEntireRow: { gridOptionsProperty: 'groupUseEntireRow', default: false },
 	enableColumnMove: { gridOptionsProperty: 'suppressMovableColumns', default: true }
 };
 
@@ -281,6 +281,8 @@ export class DataGrid extends NGGridDirective {
 
 	foundset!: FoundsetManager;
 	groupManager!: GroupManager;
+	/** [ECS-2799] the rows of all groups load through the one viewport of the root foundset, so one group at a time */
+	groupRowsFromRootQueue: Promise<void> = Promise.resolve();
 
 
 
@@ -490,7 +492,8 @@ export class DataGrid extends NGGridDirective {
 						toolPanel: 'agColumnsToolPanel',
 						toolPanelParams: {
 							suppressRowGroups: toolPanelConfig ? toolPanelConfig.suppressRowGroups : false,
-							suppressValues: true,
+							// [ECS-2799] by default only a grid with group columns shows the Values section: a full width group row has no cell for an aggregation
+							suppressValues: toolPanelConfig && toolPanelConfig.suppressValues !== undefined ? toolPanelConfig.suppressValues : this.groupUseEntireRow(),
 							suppressPivots: true,
 							suppressPivotMode: true,
 							suppressSideButtons: toolPanelConfig ? toolPanelConfig.suppressSideButtons : false,
@@ -568,6 +571,13 @@ export class DataGrid extends NGGridDirective {
 						this.setupHeaderCheckbox(true);
 					}
 					this.onColumnRowGroupChanged(params);
+				});
+
+				// [ECS-2799] the group foundsets hold the aggregations of the value columns, so reload the groups when those change
+				this.agGrid()!.api.addEventListener('columnValueChanged', () => {
+					if (this.isTableGrouped()) {
+						this.purge();
+					}
 				});
 
 				// listen to group collapsed
@@ -700,7 +710,6 @@ export class DataGrid extends NGGridDirective {
 			suppressClickEdit: false,
 			enableGroupEdit: false,
 			groupDisplayType: this.groupUseEntireRow() ? 'groupRows' : 'multipleColumns',
-			suppressAggFuncInHeader: true, // TODO support aggregations
 
 			suppressColumnVirtualisation: hasHeaderCheckboxColumn,
 			suppressScrollOnNewData: true,
@@ -891,6 +900,9 @@ export class DataGrid extends NGGridDirective {
 								column.width = column.initialWidth;
 							}
 						}
+						// [ECS-2799] updateColumnDefs restores the stored column state: store what the column menu just
+						// changed first, such as a value aggregation, else the restore undoes it
+						this.storeColumnsState();
 						this.updateColumnDefs();
 					}
 					const element = this.agGridElementRef()!.nativeElement;
@@ -1637,6 +1649,12 @@ export class DataGrid extends NGGridDirective {
 		if (value && value.displayValue !== undefined) {
 			value = value.displayValue;
 		}
+		// [ECS-2799] the aggregation of a value column in a group row is a number (or date), also on a valuelist column
+		const aggFunc = params.node.group && params.column && params.column.getAggFunc ? params.column.getAggFunc() : null;
+		if (typeof aggFunc === 'string' && value != null && !params.node.rowPinned) {
+			const dataGrid = params.context.componentParent;
+			return dataGrid.formatAggregation(value, aggFunc, dataGrid.getColumn(params.column.colId));
+		}
 		// skip format for pinned rows (footer) and valuelist linked dp, they are always text
 		if (!params.node.rowPinned) {
 			const dataGrid = params.context.componentParent;
@@ -1654,6 +1672,39 @@ export class DataGrid extends NGGridDirective {
 			value = '';
 		}
 
+		return value;
+	}
+
+	/**
+	 * [ECS-2799] The aggregation functions a column with this filter type allows, null when it cannot be aggregated
+	 */
+	getAllowedAggFuncs(filterType: string): string[] | null {
+		switch (filterType) {
+			case 'NUMBER': return ['sum', 'avg', 'min', 'max', 'count'];
+			case 'DATE':
+			case 'TIME': return ['min', 'max', 'count'];
+			case 'TEXT':
+			case 'VALUELIST':
+			case 'RADIO': return ['count'];
+		}
+		return null;
+	}
+
+	/**
+	 * [ECS-2799] Formats the aggregation of a value column in a group row: a count as a whole number, the other
+	 * functions with the number or date format of the column, or with two decimals at most when it has none
+	 */
+	formatAggregation(value: any, aggFunc: string, column: any): string {
+		const format = column && !column.valuelist ? column.format : null;
+		if (aggFunc === 'count') {
+			return this.format(value, { type: 'INTEGER', display: '#,##0' } as Format, false);
+		}
+		if (format && (format.type === 'DATETIME' || format.type === 'NUMBER' || (format.type === 'INTEGER' && aggFunc !== 'avg'))) {
+			return this.format(value, format, false);
+		}
+		if (typeof value === 'number') {
+			return this.format(value, { type: 'NUMBER', display: '#,##0.##' } as Format, false);
+		}
 		return value;
 	}
 
@@ -1821,7 +1872,8 @@ export class DataGrid extends NGGridDirective {
 				if (dataGrid.agMainMenuItemsConfig[key]) items.push(key);
 			}
 		} else {
-			items = ['rowGroup', 'rowUnGroup'];
+			// [ECS-2799] a grid with group columns can aggregate columns in its group rows
+			items = dataGrid.groupUseEntireRow() ? ['rowGroup', 'rowUnGroup'] : ['rowGroup', 'rowUnGroup', 'valueAggSubMenu'];
 		}
 		const menuItems: any = [];
 		const customMainMenu = dataGrid.customMainMenu() ? dataGrid.customMainMenu() : dataGrid.registrationService.datagridService.customMainMenu;
@@ -1895,6 +1947,14 @@ export class DataGrid extends NGGridDirective {
 			// column grouping
 			colDef.enableRowGroup = this.enabled() && column.enableRowGroup && column.dataprovider !== undefined;
 			if (column.rowGroupIndex >= 0) colDef.rowGroupIndex = column.rowGroupIndex;
+
+			// [ECS-2799] a grid with group columns can aggregate its filterable columns in the group rows: the header filter
+			// queries the column, so the group query can aggregate it too, and the filter type says which functions fit
+			const allowedAggFuncs = this.getAllowedAggFuncs(column.filterType);
+			if (!this.groupUseEntireRow() && this.enabled() && column.dataprovider !== undefined && allowedAggFuncs) {
+				colDef.enableValue = true;
+				colDef.allowedAggFuncs = allowedAggFuncs;
+			}
 			if (column.width) {
 				colDef.width = column.width;
 				if (column.initialWidth === undefined) column.initialWidth = column.width;
@@ -2351,6 +2411,113 @@ export class DataGrid extends NGGridDirective {
 	}
 
 	/**
+	 * [ECS-2799] While grouped the root foundset is sorted on the group columns first, then on the sort of the grid,
+	 * so the rows of each group are one block of root rows, in the order of the groups.
+	 *
+	 * @param rowGroupCols the row group columns of the request
+	 */
+	sortRootForGroups(rowGroupCols: any[]): Promise<any> {
+		const agGridSortModel = this.getAgGridSortModel();
+		const sortModel: any[] = [];
+		const groupColumnIndexes: number[] = [];
+		for (const rowGroupCol of rowGroupCols) {
+			// match on the column index, as getGroupedFoundsetUUID does for the direction of the groups: the sort
+			// model has the column id, rowGroupCol.field is the internal field id
+			const groupColumnIndex = this.getColumnIndex(rowGroupCol.field);
+			groupColumnIndexes.push(groupColumnIndex);
+			const groupSort = agGridSortModel.find((sm) => this.getColumnIndex(sm.colId) === groupColumnIndex);
+			sortModel.push({ colId: rowGroupCol.field, sort: groupSort ? groupSort.sort : 'asc' });
+		}
+		for (const sm of agGridSortModel) {
+			if (groupColumnIndexes.indexOf(this.getColumnIndex(sm.colId)) === -1) sortModel.push(sm);
+		}
+		const rootSort = this.getFoundsetSortModel(sortModel);
+		if (rootSort.sortString === this.foundset.getSortColumns()) {
+			return Promise.resolve();
+		}
+		const sortPromise = this.foundset.sort(rootSort.sortColumns);
+		if (!sortPromise) {
+			return Promise.resolve();
+		}
+		sortPromise.requestInfo = this.getRequestInfoWithId('getDataFromFoundset');
+		return sortPromise;
+	}
+
+	/**
+	 * [ECS-2799] The index in the root foundset viewport of a row of the root foundset, -1 when it is not in the viewport.
+	 * When grouped the row index of a node is not its foundset index, so this uses _svyFoundsetIndex.
+	 */
+	getRootViewportIndex(data: any): number {
+		const viewPort = this.foundset.foundset.viewPort;
+		const index = data._svyFoundsetIndex - viewPort.startIndex;
+		return index >= 0 && index < viewPort.rows.length ? index : -1;
+	}
+
+	/**
+	 * [ECS-2799] True for a row of the root foundset, which is also what the rows of a group are.
+	 */
+	isRootRow(data: any): boolean {
+		return !!data && data._svyFoundsetUUID === 'root';
+	}
+
+	/**
+	 * [ECS-2799] Whether all rows loaded for a group have its key in each group column. They do not when the root
+	 * foundset is sorted differently than the groups (e.g. another null precedence) or changed after the groups were counted.
+	 */
+	isRowsOfGroup(rows: any[], rowGroupCols: any[], groupKeys: any[]): boolean {
+		for (const row of rows) {
+			for (let i = 0; i < rowGroupCols.length; i++) {
+				const field = rowGroupCols[i].field;
+				const rowValue = row['_unresolved_' + field] !== undefined ? row['_unresolved_' + field] : row[field];
+				if (!this.isSameGroupKey(rowValue, groupKeys[i])) {
+					this.log.warn('Row ' + row._svyFoundsetIndex + ' has ' + rowGroupCols[i].displayName + ' ' + JSON.stringify(rowValue) + ', not the key of its group ' + JSON.stringify(groupKeys[i]));
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * [ECS-2799] Compares the value of a row with the key of a group, both as real value; null and '' are the same
+	 * (see isNullGroupKey). A day of a timestamp column is not compared: the time zones of server and client make the day
+	 * of a timestamp uncertain here.
+	 */
+	isSameGroupKey(rowValue: any, groupKey: any): boolean {
+		const value = rowValue && typeof rowValue === 'object' && 'realValue' in rowValue ? rowValue.realValue : rowValue;
+		const key = groupKey && typeof groupKey === 'object' && 'realValue' in groupKey ? groupKey.realValue : groupKey;
+		if (value === null || value === undefined || value === '') {
+			return key === null || key === undefined || key === '';
+		}
+		if (key === null || key === undefined || key === '') {
+			return false;
+		}
+		if (value instanceof Date || key instanceof Date) {
+			return true;
+		}
+		return String(value) === String(key);
+	}
+
+	/** [ECS-2799] true once the groups were reloaded for rows of another group, until the grouping changes */
+	private rowsOfOtherGroupReloaded = false;
+
+	/**
+	 * [ECS-2799] The rows loaded for a group belong to another group: reload the groups once, the data may have changed
+	 * since the groups were counted. When it happens again, ungroup instead of showing rows under the wrong group.
+	 */
+	onRowsOfOtherGroup(groupKeys: any[]) {
+		if (!this.rowsOfOtherGroupReloaded) {
+			this.rowsOfOtherGroupReloaded = true;
+			this.log.warn('The rows of group ' + JSON.stringify(groupKeys) + ' belong to another group, reloading the groups');
+			this.purge();
+		} else {
+			this.log.error('The rows of group ' + JSON.stringify(groupKeys) + ' belong to another group again, ungrouping: '
+				+ 'the root foundset is not sorted like the groups (sorting null precedence, ignore case)');
+			this.agGrid()!.api.setRowGroupColumns([]);
+		}
+	}
+
+	/**
 	 * Returns the group hierarchy for the given node
 	 *
 	 * @private
@@ -2446,6 +2613,13 @@ export class DataGrid extends NGGridDirective {
 					const index = args.node.rowIndex - this.foundset.foundset.viewPort.startIndex;
 					tooltip = column.tooltip[index];
 				}
+			} else if (this.isRootRow(args.data)) {
+				// [ECS-2799] a row of a group
+				const column = this.getColumn(args.colDef.field);
+				const index = this.getRootViewportIndex(args.data);
+				if (column && column.tooltip && index >= 0) {
+					tooltip = column.tooltip[index];
+				}
 			} else {
 				const foundsetManager = this.getFoundsetManagerByFoundsetUUID(args.data._svyFoundsetUUID);
 				const index = foundsetManager.getRowIndex(args.data) - foundsetManager.foundset.viewPort.startIndex;
@@ -2520,6 +2694,13 @@ export class DataGrid extends NGGridDirective {
 					const column = this.getColumn(params.colDef.field);
 					if (column && column.styleClassDataprovider) {
 						const index = params.node.rowIndex - this.foundset.foundset.viewPort.startIndex;
+						styleClassProvider = column.styleClassDataprovider[index];
+					}
+				} else if (this.isRootRow(params.data)) {
+					// [ECS-2799] a row of a group
+					const column = this.getColumn(params.colDef.field);
+					const index = this.getRootViewportIndex(params.data);
+					if (column && column.styleClassDataprovider && index >= 0) {
 						styleClassProvider = column.styleClassDataprovider[index];
 					}
 				} else if (params.data && params.data._svyFoundsetUUID) {
@@ -2603,6 +2784,14 @@ export class DataGrid extends NGGridDirective {
 								node.setSelected(true);
 								break;
 							}
+						}
+					} else if (this.isRootRow(node.data)) {
+						// [ECS-2799] a row of a group follows the selection of the root foundset; while a selection request
+						// is pending the root foundset does not have it yet, so the row keeps the selection of the grid
+						const isSelected = this.requestSelectionPromises.length ? node.isSelected() :
+							this.foundset.foundset.selectedRowIndexes.indexOf(node.data._svyFoundsetIndex) !== -1;
+						if (isSelected) {
+							selectedNodes.push(node);
 						}
 					} else {
 						if (selectedRecordsPKs.indexOf(node.data._svyRowId) !== -1) {
@@ -3089,7 +3278,8 @@ export class DataGrid extends NGGridDirective {
 	getFoundsetIndexFromEvent(params: any): number {
 		let foundsetIndex: any;
 		if (this.isTableGrouped()) {
-			foundsetIndex = -1;
+			// [ECS-2799] a row of a group is a row of the root foundset
+			foundsetIndex = this.isRootRow(params.node.data) ? params.node.data._svyFoundsetIndex + 1 : -1;
 		} else {
 			foundsetIndex = params.node.rowIndex + 1;
 		}
@@ -3295,6 +3485,13 @@ export class DataGrid extends NGGridDirective {
 			const column = _this.getColumn(args.colDef.field);
 			if (column && column.isEditableDataprovider) {
 				const index = args.node.rowIndex - _this.foundset.foundset.viewPort.startIndex;
+				isColumnEditable = column.isEditableDataprovider[index];
+			}
+		} else if (_this.isRootRow(args.data)) {
+			// [ECS-2799] a row of a group
+			const column = _this.getColumn(args.colDef.field);
+			const index = _this.getRootViewportIndex(args.data);
+			if (column && column.isEditableDataprovider && index >= 0) {
 				isColumnEditable = column.isEditableDataprovider[index];
 			}
 		} else {
@@ -3850,6 +4047,12 @@ export class DataGrid extends NGGridDirective {
 			const index = rowIndex - _this.foundset.foundset.viewPort.startIndex;
 			// TODO get proper foundset
 			styleClassProvider = _this.rowStyleClassDataprovider()[index];
+		} else if (_this.isRootRow(params.data)) {
+			// [ECS-2799] a row of a group
+			const index = _this.getRootViewportIndex(params.data);
+			if (_this.rowStyleClassDataprovider() && index >= 0) {
+				styleClassProvider = _this.rowStyleClassDataprovider()[index];
+			}
 		} else if (params.node.group === false) {
 
 			const rowGroupCols = [];
@@ -4161,12 +4364,16 @@ export class DataGrid extends NGGridDirective {
 		const _internalGroupRowsSelection = this.__internalGroupRowsSelection();
 		if (this.isTableGrouped()) {
 			if (selectionEvent) {
-				if (agGridSelectionEvent.source === 'rowClicked' && selectionEvent.rowIndex !== undefined) {
-					// select clicked row in the (group) foundset, else onCellClick handler won't execute because it has "skipCallIfNotSelected": true
-					const selectedGroupRow = this.agGrid()!.api.getDisplayedRowAtIndex(selectionEvent.rowIndex)!;
-					const groupFoundset = this.getFoundSetByFoundsetUUID(selectedGroupRow.data['_svyFoundsetUUID']);
-					const selectedIdx = selectedGroupRow.data['_svyFoundsetIndex'];
-					groupFoundset.requestSelectionUpdate([selectedIdx]);
+				// [ECS-2799] the rows of the groups are rows of the root foundset: select them there, as in the ungrouped grid,
+				// so the form, its related tabs and the cell click handlers ("skipCallIfNotSelected") get the selected records
+				const foundsetIndexes = this.agGrid()!.api.getSelectedNodes()
+					.filter((node: IRowNode) => !node.group && this.isRootRow(node.data))
+					.map((node: IRowNode) => node.data._svyFoundsetIndex as number)
+					.sort((a: number, b: number) => a - b);
+				let requestSelectionPromise: Promise<any> = null as any;
+				if (foundsetIndexes.length && JSON.stringify(this.foundset.foundset.selectedRowIndexes) !== JSON.stringify(foundsetIndexes)) {
+					requestSelectionPromise = this.foundset.foundset.requestSelectionUpdate(foundsetIndexes);
+					this.requestSelectionPromises.push(requestSelectionPromise);
 				}
 				const groupSelection = this.internalGetGroupSelection();
 				if (groupSelection) {
@@ -4196,9 +4403,35 @@ export class DataGrid extends NGGridDirective {
 					this._internalCheckboxGroupSelectionChange.emit(_internalCheckboxGroupSelection);
 				}
 				// Trigger event on selection change in grouo mode
-				const onSelectedRowsChanged = this.onSelectedRowsChanged();
-				if (onSelectedRowsChanged && agGridSelectionEvent.source !== 'checkboxSelected') {
-					onSelectedRowsChanged(false, undefined, undefined, undefined, this.createJSEvent());
+				const notifySelectedRowsChanged = () => {
+					const onSelectedRowsChanged = this.onSelectedRowsChanged();
+					if (onSelectedRowsChanged && agGridSelectionEvent.source !== 'checkboxSelected') {
+						onSelectedRowsChanged(false, undefined, undefined, undefined, this.createJSEvent());
+					}
+				};
+				if (requestSelectionPromise) {
+					// [ECS-2799] notify once the root foundset has the selection, as in the ungrouped grid
+					const removeRequestSelectionPromise = () => {
+						const promiseIdx = this.requestSelectionPromises.indexOf(requestSelectionPromise);
+						if (promiseIdx !== -1) this.requestSelectionPromises.splice(promiseIdx, 1);
+					};
+					requestSelectionPromise.then(() => {
+						removeRequestSelectionPromise();
+						// the root foundset can end up with another selection than requested
+						this.selectedRowIndexesChanged();
+						notifySelectedRowsChanged();
+						if ((this.agGridOptions.rowSelection as any)['mode'] === 'multiRow') {
+							this.onMultipleSelectionChangedEx();
+						}
+					}, () => {
+						removeRequestSelectionPromise();
+						this.selectedRowIndexesChanged();
+						if ((this.agGridOptions.rowSelection as any)['mode'] === 'multiRow') {
+							this.onMultipleSelectionChangedEx();
+						}
+					});
+				} else {
+					notifySelectedRowsChanged();
 				}
 			}
 
@@ -4500,6 +4733,8 @@ export class DataGrid extends NGGridDirective {
 	onColumnRowGroupChanged(event: any) {
 		// return;
 		const rowGroupCols = this.getRowGroupColumns();
+		// [ECS-2799] another grouping gets its own reload for rows of another group
+		this.rowsOfOtherGroupReloaded = false;
 		this.placeExpandAllGroupsButton();
 
 		// FIXME why does give an error,  i don't uderstand
@@ -5067,7 +5302,9 @@ export class DataGrid extends NGGridDirective {
 					if (node.group) {
 						groupSelection.push({ colId: node.rowGroupColumn!.getColId(), groupkey: node.data[node.field as any] });
 					} else {
-						groupRowsSelection.push({ foundsetId: node.data._svyFoundsetUUID, _svyRowId: node.data._svyRowId, svyType: 'record' });
+						// [ECS-2799] a row of a group is a row of the root foundset, which has no hashed foundset id
+					const foundsetId = this.isRootRow(node.data) ? this.myFoundset().foundsetId : node.data._svyFoundsetUUID;
+					groupRowsSelection.push({ foundsetId, _svyRowId: node.data._svyRowId, svyType: 'record' });
 					}
 				}
 			}
@@ -5628,7 +5865,8 @@ class FoundsetManager {
 			size = 0;
 		}
 
-		if (this.dataGrid.agGridOptions.maxBlocksInCache === -1 && this.foundset.viewPort.startIndex === 0) {
+		// [ECS-2799] only extend the viewport for the next block, not for the block of a group further down the root foundset
+		if (this.dataGrid.agGridOptions.maxBlocksInCache === -1 && this.foundset.viewPort.startIndex === 0 && startIndex <= this.foundset.viewPort.size) {
 			return this.foundset.loadExtraRecordsAsync(size);
 		} else {
 			return this.foundset.loadRecordsAsync(startIndex, size);
@@ -5682,9 +5920,10 @@ class FoundsetServer {
 	 * @param request
 	 * @param groupKeys
 	 * @param callback callback(data, isLastRow)
+	 * @param [groupNodes] the group node of each group key
 	 * @protected
 	 */
-	getData(request: any, groupKeys: any, callback: any) {
+	getData(request: any, groupKeys: any, callback: any, groupNodes?: any[]) {
 
 		this.dataGrid.log.debug(request);
 
@@ -5746,14 +5985,20 @@ class FoundsetServer {
 			const filterMyFoundsetArg = [];
 			if (rowGroupCols.length) {
 				this.dataGrid.groupManager.removeFoundsetRefAtLevel(0);
-				filterMyFoundsetArg.push('{}');
-			} else {
-				filterMyFoundsetArg.push(sUpdatedFilterModel);
 			}
+			// [ECS-2799] also when grouped, the rows of the groups come from the root foundset
+			filterMyFoundsetArg.push(sUpdatedFilterModel);
 
 			const filterPromise = this.dataGrid.servoyApi().callServerSideApi('filterMyFoundset', filterMyFoundsetArg);
 			(filterPromise as any)['requestInfo'] = this.dataGrid.getRequestInfoWithId('filterMyFoundset');
 			allPromises.push(filterPromise);
+		}
+
+		// [ECS-2799] the rows of a group are rows of the root foundset, so selecting, clicking and editing them
+		// works on the records of the form, as in the ungrouped grid
+		if (rowGroupCols.length > 0 && groupKeys.length === rowGroupCols.length && groupNodes) {
+			Promise.all(allPromises).then(() => this.getGroupRowsFromRoot(request, rowGroupCols, groupKeys, groupNodes, callback)).catch((e) => this.getFoundsetRefError(e));
+			return;
 		}
 
 		let sortModel = this.dataGrid.getAgGridSortModel();
@@ -5886,7 +6131,45 @@ class FoundsetServer {
 	 * @param foundsetRef the foundsetManager object
 	 * @protected
 	 */
-	getDataFromFoundset(foundsetManager: FoundsetManager, request: any, callback: any) {
+	/**
+	 * [ECS-2799] Loads the rows of a group from the root foundset. Sorted on the group columns, the rows of a group
+	 * are the block of root rows after the rows of the groups before it.
+	 */
+	getGroupRowsFromRoot(request: any, rowGroupCols: any, groupKeys: any[], groupNodes: any[], callback: any) {
+		const dataGrid = this.dataGrid;
+		const count = groupNodes[groupNodes.length - 1].data['svycount'];
+		dataGrid.groupRowsFromRootQueue = dataGrid.groupRowsFromRootQueue.then(() => new Promise<void>((resolve) => {
+			const fail = (e: any) => {
+				resolve();
+				this.getFoundsetRefError(e);
+			};
+			dataGrid.sortRootForGroups(rowGroupCols).then(() =>
+				dataGrid.servoyApi().callServerSideApi('getGroupRootOffset',
+					[groupNodes.map((node) => node.data._svyFoundsetUUID), groupNodes.map((node) => node.data._svyFoundsetIndex)])
+			).then((offset: any) => {
+				const groupRowCount = Math.min(request.endRow, count) - request.startRow;
+				if (groupRowCount <= 0) {
+					resolve();
+					callback([], count);
+					return;
+				}
+				// load the whole block, getDataFromFoundset sizes the viewport on it; the rows after the group belong to the next group
+				this.getDataFromFoundset(dataGrid.foundset, { startRow: offset + request.startRow, endRow: offset + request.endRow }, (rows: any) => {
+					resolve();
+					const groupRows = rows.slice(0, groupRowCount);
+					// rows of another group mean that the root foundset is not in the order of the groups
+					if (!dataGrid.isRowsOfGroup(groupRows, rowGroupCols, groupKeys)) {
+						callback([], 0);
+						dataGrid.onRowsOfOtherGroup(groupKeys);
+						return;
+					}
+					callback(groupRows, count);
+				}, fail);
+			}).catch(fail);
+		}));
+	}
+
+	getDataFromFoundset(foundsetManager: FoundsetManager, request: any, callback: any, errorCallback?: (e: any) => void) {
 		// test cache blocks
 		//if (!isTableGrouped()) test_validateCache();
 
@@ -5941,7 +6224,7 @@ class FoundsetServer {
 
 				// TODO data is ready here ?
 
-			}).catch((e) => this.getFoundsetRefError(e));
+			}).catch((e) => errorCallback ? errorCallback(e) : this.getFoundsetRefError(e));
 		} else {
 			callback(foundsetManager.getViewPortData(viewPortStartIndex, viewPortEndIndex), foundsetManager.getLastRowIndex());
 		}
@@ -6135,7 +6418,7 @@ class FoundsetDatasource implements IServerSideDatasource {
 							}
 						}
 					}
-				});
+				}, groupNodes);
 		}, (reason) => {
 			_this.dataGrid.log.error('Can not get realValues for groupKeys ' + reason);
 		});
@@ -6377,8 +6660,17 @@ class GroupManager {
 			}
 		}
 
+		// [ECS-2799] the aggregation of each value column, computed in the group query
+		const valueColumns: any[] = [];
+		for (const valueColumn of this.dataGrid.agGrid()!.api.getValueColumns()) {
+			const valueColumnIdx = this.dataGrid.getColumnIndex(valueColumn.getColId());
+			if (valueColumnIdx > -1 && typeof valueColumn.getAggFunc() === 'string') {
+				valueColumns.push({ colIdx: valueColumnIdx, aggFunc: valueColumn.getAggFunc() });
+			}
+		}
+
 		const childFoundsetPromise = this.dataGrid.servoyApi().callServerSideApi('getGroupedFoundsetUUID',
-			[groupColumns, groupKeys, idForFoundsets, sort, this.dataGrid.filterModel, hasRowStyleClassDataprovider, sortColumns]);
+			[groupColumns, groupKeys, idForFoundsets, sort, this.dataGrid.filterModel, hasRowStyleClassDataprovider, sortColumns, valueColumns]);
 
 		(childFoundsetPromise as any).then((childFoundsetUUID: any) => {
 			this.dataGrid.log.debug(childFoundsetUUID);
