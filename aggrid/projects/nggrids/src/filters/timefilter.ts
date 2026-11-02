@@ -29,8 +29,8 @@ let filterCount = 0;
           <input [hidden]="!showToInput(0)" class="ag-filter-filter ag-input-field-input ag-text-field-input" style="min-width: 0; flex: 1 1 0;"
             type="text" inputmode="numeric" autocomplete="off" placeholder="HH:mm" #elementTo>
           @if (isFloating && floatingModel) {
-            <button type="button" style="border: none; background: none; padding: 0 2px; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
-              (click)="clearFilter()">×</button>
+            <button type="button" class="ag-button" style="margin-left: 4px; border: 0; padding: 0; background: none; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
+              (click)="clearFilter()"><span class="ag-icon ag-icon-cross" role="presentation"></span></button>
           }
         </div>
       </div>
@@ -38,8 +38,8 @@ let filterCount = 0;
         <div class="ag-filter-body">
           <div class="ag-input-wrapper">
             <input class="ag-filter-filter ag-input-field-input" type="text" readonly [value]="floatingText()" [title]="floatingText()" (keydown)="onSummaryKeydown($event)">
-            <button type="button" style="border: none; background: none; padding: 0 2px; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
-              (click)="clearFilter()">×</button>
+            <button type="button" class="ag-button" style="margin-left: 4px; border: 0; padding: 0; background: none; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
+              (click)="clearFilter()"><span class="ag-icon ag-icon-cross" role="presentation"></span></button>
           </div>
         </div>
       }

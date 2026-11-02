@@ -32,6 +32,7 @@ import { DateFilter } from '../filters/datefilter';
 import { TimeFilter } from '../filters/timefilter';
 import { GlobisValuelistFilter } from '../filters/globis/globisvaluelistfilter';
 import { GlobisDateFilter } from '../filters/globis/globisdatefilter';
+import { GlobisTextFilter } from '../filters/globis/globistextfilter';
 
 const TABLE_PROPERTIES_DEFAULTS = {
 	rowHeight: { gridOptionsProperty: 'rowHeight', default: 25 },
@@ -1010,7 +1011,9 @@ export class DataGrid extends NGGridDirective {
 				dateFilter: DateFilter,
 				timeFilter: TimeFilter,
 				globisValuelistFilter: GlobisValuelistFilter,
-				globisDateFilter: GlobisDateFilter
+				globisDateFilter: GlobisDateFilter,
+				globisTextFilter: GlobisTextFilter,
+				globisNumberFilter: GlobisTextFilter
 			}
 		} as GridOptions;
 
@@ -2026,10 +2029,10 @@ export class DataGrid extends NGGridDirective {
 			if (enabled && column.filterType) {
 				colDef.filterParams = { buttons: ['apply', 'clear'], newRowsAction: 'keep', caseSensitive: false };
 
-				if (column.filterType === 'TEXT') {
-					colDef.filter = 'agTextColumnFilter';
-				} else if (column.filterType === 'NUMBER') {
-					colDef.filter = 'agNumberColumnFilter';
+				if (column.filterType === 'TEXT' || column.filterType === 'NUMBER') {
+					// [GLR-7459] the Globis filter adds a list of values, AND / OR and a clear button to the AG Grid filters
+					colDef.filter = column.filterType === 'TEXT' ? 'globisTextFilter' : 'globisNumberFilter';
+					if (!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = colDef.filter;
 				} else if (column.filterType === 'TIME') {
 					colDef.filter = 'timeFilter';
 					colDef.filterParams['suppressAndOrCondition'] = true;

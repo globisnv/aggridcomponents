@@ -55,8 +55,8 @@ class ValuelistCondition {
                   (keydown)="onSummaryKeydown($event)">
               }
               @if (hasFilter()) {
-                <button type="button" style="border: none; background: none; padding: 0 2px; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
-                  (click)="clearFilter()">×</button>
+                <button type="button" class="ag-button" style="margin-left: 4px; border: 0; padding: 0; background: none; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
+                  (click)="clearFilter()"><span class="ag-icon ag-icon-cross" role="presentation"></span></button>
               }
             </div>
           </div>
