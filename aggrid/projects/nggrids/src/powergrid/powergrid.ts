@@ -20,6 +20,8 @@ import { ValuelistFilter } from '../filters/valuelistfilter';
 import { RadioFilter } from '../filters/radiofilter';
 import { DateFilter } from '../filters/datefilter';
 import { TimeFilter } from '../filters/timefilter';
+import { GlobisValuelistFilter } from '../filters/globis/globisvaluelistfilter';
+import { GlobisDateFilter } from '../filters/globis/globisdatefilter';
 import { NgbTypeaheadConfig } from '@ng-bootstrap/ng-bootstrap';
 import { RegistrationService } from '../datagrid/commons/registration.service';
 
@@ -560,7 +562,9 @@ export class PowerGrid extends NGGridDirective {
                 valuelistFilter: ValuelistFilter,
                 radioFilter: RadioFilter,
                 dateFilter: DateFilter,
-                timeFilter: TimeFilter
+                timeFilter: TimeFilter,
+                globisValuelistFilter: GlobisValuelistFilter,
+                globisDateFilter: GlobisDateFilter
             }
         };
 
@@ -1121,13 +1125,15 @@ export class PowerGrid extends NGGridDirective {
                         if(!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'timeFilter';
                     } else if (column.filterType === 'DATE') {
                         //colDef.filter = 'agDateColumnFilter';
-                        colDef.filter = 'dateFilter';
+                        // [GLR-7459] the Globis filter adds the relative dates of the extended filter builder to the popup
+                        colDef.filter = 'globisDateFilter';
                         colDef.filterParams['suppressAndOrCondition'] = true;
-                        if(!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'dateFilter';
+                        if(!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'globisDateFilter';
                     } else if (column.filterType === 'VALUELIST') {
-                        colDef.filter = 'valuelistFilter';
+                        // [GLR-7459] the Globis filter adds in / not in / blank to the popup
+                        colDef.filter = 'globisValuelistFilter';
                         colDef.filterParams['suppressAndOrCondition'] = true;
-                        if(!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'valuelistFilter';
+                        if(!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'globisValuelistFilter';
                         //colDef.floatingFilterComponentParams = { suppressFilterButton : true};
                     } else if (column.filterType === 'RADIO') {
                         colDef.filter = 'radioFilter';

@@ -13,7 +13,9 @@ import { createTimeMaskFormat, parseMaskedTime, toHHmm } from '../time-minutes';
           <option value="equals">{{ equals }}</option>
           <option value="notEqual">{{ notEqual }}</option>
           <option value="lessThan">{{ lessThan }}</option>
+          <option value="lessThanOrEqual">{{ lessThanOrEqual }}</option>
           <option value="greaterThan">{{ greaterThan }}</option>
+          <option value="greaterThanOrEqual">{{ greaterThanOrEqual }}</option>
           <option value="inRange">{{ inRange }}</option>
           <option value="blank">{{ blank }}</option>
           <option value="notBlank">{{ notBlank }}</option>
@@ -29,10 +31,16 @@ import { createTimeMaskFormat, parseMaskedTime, toHHmm } from '../time-minutes';
             <span>–</span>
           }
           <input [hidden]="!showSecondInput()" class="ag-filter-filter ag-input-field-input ag-text-field-input" style="min-width: 0; flex: 1 1 0;" type="text" inputmode="numeric" autocomplete="off" placeholder="HH:mm" #elementTo>
+          @if (isFloating && floatingOperator) {
+            <button type="button" style="border: none; background: none; padding: 0 2px; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
+              (click)="clearFilter()">×</button>
+          }
         </div>
       </div>
       @if (isFloatingBlank()) {
         <span>{{ floatingBlankText() }}</span>
+        <button type="button" style="border: none; background: none; padding: 0 2px; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
+          (click)="clearFilter()">×</button>
       }
     </div>
     @if (hasApplyButton()) {
@@ -54,7 +62,9 @@ export class TimeFilter extends FilterDirective {
     equals!: string;
     notEqual!: string;
     lessThan!: string;
+    lessThanOrEqual!: string;
     greaterThan!: string;
+    greaterThanOrEqual!: string;
     inRange!: string;
     blank!: string;
     notBlank!: string;
@@ -76,7 +86,9 @@ export class TimeFilter extends FilterDirective {
         this.equals = localeText['equals'] || 'Equals';
         this.notEqual = localeText['notEqual'] || 'Does not equal';
         this.lessThan = localeText['lessThan'] || 'Before';
+        this.lessThanOrEqual = localeText['lessThanOrEqual'] || 'Before or equal';
         this.greaterThan = localeText['greaterThan'] || 'After';
+        this.greaterThanOrEqual = localeText['greaterThanOrEqual'] || 'After or equal';
         this.inRange = localeText['inRange'] || 'Between';
         this.blank = localeText['blank'] || 'Blank';
         this.notBlank = localeText['notBlank'] || 'Not blank';
@@ -166,7 +178,9 @@ export class TimeFilter extends FilterDirective {
             case 'equals': return '=';
             case 'notEqual': return '≠';
             case 'lessThan': return '<';
+            case 'lessThanOrEqual': return '≤';
             case 'greaterThan': return '>';
+            case 'greaterThanOrEqual': return '≥';
             default: return null;
         }
     }
@@ -220,10 +234,17 @@ export class TimeFilter extends FilterDirective {
             case 'equals': return value === model.filter;
             case 'notEqual': return value !== model.filter;
             case 'lessThan': return !isBlank && value < model.filter;
+            case 'lessThanOrEqual': return !isBlank && value <= model.filter;
             case 'greaterThan': return !isBlank && value > model.filter;
+            case 'greaterThanOrEqual': return !isBlank && value >= model.filter;
             case 'inRange': return !isBlank && value >= model.filter && value <= model.filterTo;
             default: return true;
         }
+    }
+
+    // [GLR-7459] the clear button of the floating filter
+    clearFilter() {
+        this.floatingParams.parentFilterInstance((parent: any) => parent.onClearFilter());
     }
 
     // clearing removes the filter right away, there is no need to apply afterwards
