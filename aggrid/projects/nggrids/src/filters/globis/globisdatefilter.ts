@@ -87,23 +87,23 @@ class DateCondition {
         <ng-container *ngTemplateOutlet="operatorSelect; context: { $implicit: conditions[0] }"></ng-container>
       </div>
       <div class="ag-filter-body" [style.display]="showDateInput() ? null : 'none'">
-        <div class="ag-input-wrapper">
-          <div class="input-group" id="filterdatetimepicker" data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepicker>
-            <input class="ag-filter-filter ag-input-field-input form-control" type="text" id="filterText" autocomplete="off" data-td-target="#filterdatetimepicker" #element>
+        <div class="ag-input-wrapper" [style]="isFloating ? null : 'flex-direction: column; align-items: stretch; gap: 4px;'">
+          <div class="input-group globis-date-filter-picker" id="filterdatetimepicker" data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepicker>
+            <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input" type="text" id="filterText" autocomplete="off" data-td-target="#filterdatetimepicker" #element>
             <span class="input-group-text" data-td-target="#filterdatetimepicker" data-td-toggle="datetimepicker">
               <i class="fas fa-calendar"></i>
             </span>
           </div>
-          <div [hidden]="isFloating || conditions[0].operator() !== 'inRange'" class="input-group" id="filterdatetimepickerTo"
+          <div [hidden]="isFloating || conditions[0].operator() !== 'inRange'" class="input-group globis-date-filter-picker" id="filterdatetimepickerTo"
             data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepickerTo>
-            <input class="ag-filter-filter ag-input-field-input form-control" type="text" id="filterTextTo" autocomplete="off" data-td-target="#filterdatetimepickerTo" #elementTo>
+            <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input" type="text" id="filterTextTo" autocomplete="off" data-td-target="#filterdatetimepickerTo" #elementTo>
             <span class="input-group-text" data-td-target="#filterdatetimepickerTo" data-td-toggle="datetimepicker">
               <i class="fas fa-calendar"></i>
             </span>
           </div>
           @if (isFloating && hasFilter()) {
-            <button type="button" style="border: none; background: none; padding: 0 2px; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
-              (click)="clearFilter()">×</button>
+            <button type="button" class="ag-button" style="margin-left: 4px; border: 0; padding: 0; background: none; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
+              (click)="clearFilter()"><span class="ag-icon ag-icon-cross" role="presentation"></span></button>
           }
         </div>
       </div>
@@ -118,16 +118,16 @@ class DateCondition {
             <ng-container *ngTemplateOutlet="operatorSelect; context: { $implicit: conditions[1] }"></ng-container>
           </div>
           <div class="ag-filter-body" [style.display]="usesDate(conditions[1]) ? null : 'none'">
-            <div class="ag-input-wrapper">
-              <div class="input-group" id="filterdatetimepicker2" data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepicker2>
-                <input class="ag-filter-filter ag-input-field-input form-control" type="text" id="filterText2" autocomplete="off" data-td-target="#filterdatetimepicker2" #element2>
+            <div class="ag-input-wrapper" style="flex-direction: column; align-items: stretch; gap: 4px;">
+              <div class="input-group globis-date-filter-picker" id="filterdatetimepicker2" data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepicker2>
+                <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input" type="text" id="filterText2" autocomplete="off" data-td-target="#filterdatetimepicker2" #element2>
                 <span class="input-group-text" data-td-target="#filterdatetimepicker2" data-td-toggle="datetimepicker">
                   <i class="fas fa-calendar"></i>
                 </span>
               </div>
-              <div [hidden]="conditions[1].operator() !== 'inRange'" class="input-group" id="filterdatetimepickerTo2"
+              <div [hidden]="conditions[1].operator() !== 'inRange'" class="input-group globis-date-filter-picker" id="filterdatetimepickerTo2"
                 data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepickerTo2>
-                <input class="ag-filter-filter ag-input-field-input form-control" type="text" id="filterTextTo2" autocomplete="off" data-td-target="#filterdatetimepickerTo2" #elementTo2>
+                <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input" type="text" id="filterTextTo2" autocomplete="off" data-td-target="#filterdatetimepickerTo2" #elementTo2>
                 <span class="input-group-text" data-td-target="#filterdatetimepickerTo2" data-td-toggle="datetimepicker">
                   <i class="fas fa-calendar"></i>
                 </span>
@@ -142,8 +142,8 @@ class DateCondition {
           <div class="ag-input-wrapper">
             <input class="ag-filter-filter ag-input-field-input" type="text" readonly [value]="floatingSummary()" [title]="floatingSummary()"
               (keydown)="onSummaryKeydown($event)">
-            <button type="button" style="border: none; background: none; padding: 0 2px; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
-              (click)="clearFilter()">×</button>
+            <button type="button" class="ag-button" style="margin-left: 4px; border: 0; padding: 0; background: none; cursor: pointer;" [title]="txtClearFilter" [attr.aria-label]="txtClearFilter"
+              (click)="clearFilter()"><span class="ag-icon ag-icon-cross" role="presentation"></span></button>
           </div>
         </div>
       }
@@ -155,9 +155,10 @@ class DateCondition {
       </div>
     }</div>
     <ng-template #operatorSelect let-condition>
-      <select style="width:100%;" [value]="condition.operator()" (change)="onOperatorChange(condition, $event)">
+      <!-- the options mark the operator themselves: a [value] on the select is set before @for made the options -->
+      <select style="width:100%;" (change)="onOperatorChange(condition, $event)">
         @for (operator of operators; track operator) {
-          <option [value]="operator">{{ operatorLabels()[operator] }}</option>
+          <option [value]="operator" [selected]="operator === condition.operator()">{{ operatorLabels()[operator] }}</option>
         }
       </select>
     </ng-template>
