@@ -69,6 +69,21 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
         expect(checkboxes(fixture).length).toBe(4);
     });
 
+    it('lets the conditions scroll above the Apply panel when the popup does not fit in the window', () => {
+        vi.useFakeTimers();
+        const body = fixture.nativeElement.querySelector('.ag-filter-body-wrapper') as HTMLElement;
+        body.getBoundingClientRect = () => ({ top: 300, bottom: 600 }) as DOMRect;
+        body.parentElement!.getBoundingClientRect = () => ({ top: 300, bottom: 640 }) as DOMRect;
+
+        fixture.componentInstance.afterGuiAttached();
+        vi.advanceTimersByTime(0);
+        fixture.detectChanges();
+        vi.useRealTimers();
+
+        expect(body.style.overflowY).toBe('auto');
+        expect(body.style.maxHeight).toBe((window.innerHeight - 300 - 40 - 8) + 'px');
+    });
+
     it('filters on all checked values', () => {
         clickValue(fixture, 'Open');
         clickValue(fixture, 'Closed');
