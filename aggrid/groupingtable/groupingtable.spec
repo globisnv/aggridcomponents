@@ -38,7 +38,7 @@
 		"enableColumnMove": { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "If moving of columns is enabled"}},
 		"enableSorting": { "type": "boolean", "default": true, "tags": {"scope": "design", "doc": "Enable column sorting by clickin on the column's header"}},
 		"checkboxSelection" : {"type": "boolean", "default" : false, "tags" : {"scope": "design", "doc": "When true the row has a checkbox for selecting/unselecting "}},
-		"groupUseEntireRow" : {"type": "boolean", "default" : true, "tags" : {"scope": "design", "doc": "When true the group takes the entire row"}},
+		"groupUseEntireRow" : {"type": "boolean", "default" : false, "tags" : {"scope": "design", "doc": "When true the group takes the entire row; when false the groups are shown in group columns and the group rows can show aggregations"}},
 		"groupCheckbox" : {"type": "boolean", "default" : false, "tags" : {"scope": "design", "doc": "When true the group has checkbox for selecting/unselecting all child rows "}},
 		"tooltipTextRefreshData" : { "type": "tagstring", "default" : "Refresh for latest data !", "tags": {"doc": "Tooltip text shown when hovering the refresh button"}},
 		"visible": "visible",
@@ -648,6 +648,18 @@
             ],
 			"allowaccess" : "enabled,visible"
         },
+        "getGroupRootOffset" : {
+            "returns" : "int",
+            "parameters" : [{
+                    "name": "groupFoundsets",
+                    "type": "foundsetRef[]"
+                }, {
+                    "name": "groupIndexes",
+                    "type": "int[]"
+                }
+            ],
+			"allowaccess" : "enabled,visible"
+        },
 		"filterMyFoundset" : {
             "parameters" : [{
 					"name": "sFilterModel",
@@ -840,7 +852,8 @@
 			"suppressSideButtons": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
 			"suppressColumnFilter": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
 			"suppressColumnSelectAll": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
-			"suppressColumnExpandAll": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}}
+			"suppressColumnExpandAll": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},
+			"suppressValues": {"type": "boolean", "tags" : {"scope": "design", "doc": "Hides the Values section, where the user aggregates columns in the group rows. When not set, it is shown when the grid has group columns (groupUseEntireRow false)"}}
 		},
 		"mainMenuItemsConfig" : {
 			"sortAscending": {"type": "boolean", "default" : false, "tags" : {"scope": "design"}},

@@ -8,7 +8,7 @@ var appliedFilter = null;
  *
  * */
 $scope.getGroupedFoundsetUUID = function(
-	groupColumns, groupKeys, idForFoundsets, sort, sFilterModel, hasRowStyleClassDataprovider, sortColumns) {
+	groupColumns, groupKeys, idForFoundsets, sort, sFilterModel, hasRowStyleClassDataprovider, sortColumns, valueColumns) {
 	log('START SERVER SIDE ------------------------------------------ ', LOG_LEVEL.WARN);
 
 	// root is the parent
@@ -88,6 +88,7 @@ $scope.getGroupedFoundsetUUID = function(
 			query.result.add(groupColumn.cast('date'), getDataproviderNameForGroupingView(groupDataprovider));
 			query.groupBy.add(groupColumn.cast('date'));
 
+			query.sort.add(getNullsFirstSortKey(query, groupColumn.cast('date'), groupSortDirection));
 			if (groupSortDirection === 'desc') {
 				query.sort.add(groupColumn.cast('date').desc);
 			} else {
@@ -96,8 +97,9 @@ $scope.getGroupedFoundsetUUID = function(
 		}
 		else {
 			query.result.add(groupColumn, getDataproviderNameForGroupingView(groupDataprovider));
-			query.groupBy.add(groupColumn);	
+			query.groupBy.add(groupColumn);
 
+			query.sort.add(getNullsFirstSortKey(query, groupColumn, groupSortDirection));
 			if (groupSortDirection === 'desc') {
 				query.sort.add(groupColumn.desc);
 			} else {
@@ -126,7 +128,28 @@ $scope.getGroupedFoundsetUUID = function(
 				query.result.add(compositeKey.count.distinct, "svycount");
 			}
 		} else {
-			query.result.add(query.aggregates.count(), "svycount"); 
+			query.result.add(query.aggregates.count(), "svycount");
+		}
+
+		// [ECS-2799] the aggregation of each value column, named like the column so the group row shows it in that column
+		if (valueColumns) {
+			for (let v = 0; v < valueColumns.length; v++) {
+				let valueDataprovider = $scope.model.columns[valueColumns[v].colIdx].dataprovider;
+				if (valueDataprovider && allGroupDataproviders.indexOf(valueDataprovider) == -1) {
+					// a dataprovider that is no database column (calculation, form variable) or a function that does not
+					// fit the column type would fail the whole group query, so such an aggregation is skipped
+					try {
+						let valueColumn = getQBColumnForDataprovider(query, valueDataprovider);
+						if (isAggregationAllowed(valueColumns[v].aggFunc, valueColumn.getTypeAsString())) {
+							query.result.add(getAggregate(valueColumn, valueColumns[v].aggFunc), getDataproviderNameForGroupingView(valueDataprovider));
+						} else {
+							log('Cannot aggregate ' + valueDataprovider + ' with ' + valueColumns[v].aggFunc, LOG_LEVEL.WARN);
+						}
+					} catch (e) {
+						log('Cannot aggregate ' + valueDataprovider + ': ' + e, LOG_LEVEL.WARN);
+					}
+				}
+			}
 		}
 
 		// Apply header filters to the count query so svycount reflects filtered data
@@ -279,6 +302,24 @@ $scope.removeGroupedFoundsetUUID = function(parentFoundset) {
 	return false;
 }
 
+/**
+ * [ECS-2799] The rows of a group are a block of rows of the root foundset, which is sorted on the group columns while grouped.
+ * Returns where that block starts: the svycount of the groups before it, on each group level.
+ *
+ * @param {Array<JSFoundSet>} groupFoundsets the foundset of the group rows, for each level (top level first)
+ * @param {Array<Number>} groupIndexes the 0-based index of the group in that foundset, for each level
+ * @return {Number}
+ */
+$scope.getGroupRootOffset = function(groupFoundsets, groupIndexes) {
+	let offset = 0;
+	for (let i = 0; i < groupFoundsets.length; i++) {
+		for (let j = 1; j <= groupIndexes[i]; j++) {
+			offset += groupFoundsets[i].getRecord(j)['svycount'];
+		}
+	}
+	return offset;
+}
+
 $scope.cellClick = function(clicktype, foundsetindex, columnindex, record, event, dataTarget) {
 	if($scope.model.columns && (!$scope.model.columns[columnindex] || $scope.model.columns[columnindex].enabled === false)) return;
 
@@ -293,6 +334,58 @@ $scope.cellClick = function(clicktype, foundsetindex, columnindex, record, event
 
 function getDataproviderNameForGroupingView(dataproviderName) {
 	return dataproviderName ? dataproviderName.replace(/\./g, '_') : dataproviderName;
+}
+
+/**
+ * [ECS-2799] The sort key that puts the null group where the root foundset has it. Foundsets sort nulls first ascending
+ * and last descending (sortingNullprecedence ascNullsFirst of the servers, like svy_db_convertQueryForPostgres and the
+ * indexes), while a query builder sort uses the database default. The rows of a group are a block of the root
+ * foundset, so the groups must be in its order.
+ *
+ * @param {QBSelect} query
+ * @param {QBColumn} groupExpression what the query groups by
+ * @param {String} direction asc or desc
+ * @return {QBSort}
+ */
+function getNullsFirstSortKey(query, groupExpression, direction) {
+	const nullKey = direction === 'desc' ? 1 : 0;
+	return query.case.when(groupExpression.isNull).then(nullKey).else(1 - nullKey).asc;
+}
+
+/**
+ * [ECS-2799] The aggregate for the aggregation function of a value column
+ *
+ * @param {QBColumn} qbColumn
+ * @param {String} aggFunc sum, avg, min, max or count
+ * @return {QBColumn}
+ */
+function getAggregate(qbColumn, aggFunc) {
+	switch (aggFunc) {
+		case 'sum': return qbColumn.sum;
+		case 'avg': return qbColumn.avg;
+		case 'min': return qbColumn.min;
+		case 'max': return qbColumn.max;
+		case 'count': return qbColumn.count;
+	}
+	return null;
+}
+
+/**
+ * [ECS-2799] Whether the aggregation function fits the type of the column
+ *
+ * @param {String} aggFunc sum, avg, min, max or count
+ * @param {String} columnType the type of the column, as QBColumn.getTypeAsString() gives it
+ * @return {Boolean}
+ */
+function isAggregationAllowed(aggFunc, columnType) {
+	switch (aggFunc) {
+		case 'sum':
+		case 'avg': return columnType == 'INTEGER' || columnType == 'NUMBER';
+		case 'min':
+		case 'max': return columnType == 'INTEGER' || columnType == 'NUMBER' || columnType == 'DATETIME' || columnType == 'TEXT';
+		case 'count': return true;
+	}
+	return false;
 }
 
 /**
