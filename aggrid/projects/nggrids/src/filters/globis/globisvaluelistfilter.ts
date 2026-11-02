@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, Signal, computed, signal, viewChild } from '@angular/core';
 import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
 import type { IAfterGuiAttachedParams } from 'ag-grid-community';
-import { firstValueFrom } from 'rxjs';
 import { ValuelistFilter } from '../valuelistfilter';
 import { getPopupBodyMaxHeight } from './popupheight';
 
@@ -156,7 +155,7 @@ export class GlobisValuelistFilter extends ValuelistFilter {
     // the values a condition can check without a search: the valuelist without its empty entry. Servoy gives at most
     // 100 entries of a database valuelist, so the search asks the server for the others
     private readonly listValues = computed(() => this.withoutEmpty(this._valuelistValues() || []));
-    // the display values of real values that are not among those entries: found by a search, or fetched for a saved filter
+    // the display values of real values that are not among those entries: found by a search, or kept in a saved filter
     private readonly otherDisplayValues = signal(new Map<any, any>());
     readonly conditions = [
         new ValuelistCondition(this.listValues, (realValue) => this.getRawDisplayValue(realValue) ?? realValue),
@@ -170,7 +169,6 @@ export class GlobisValuelistFilter extends ValuelistFilter {
     // whether the floating filter shows the clear button
     readonly hasFilter = signal(false);
     private hidePopup: (() => void) | undefined;
-    private parentModelCalls = 0;
 
     agInit(params: any): void {
         super.agInit(params);
@@ -249,7 +247,7 @@ export class GlobisValuelistFilter extends ValuelistFilter {
       condition.selected.set(values);
       condition.searchTerm.set('');
       condition.results.set(null);
-      void this.resolveDisplayValues(values);
+      this.rememberModelDisplayValues(model);
     }
 
     onSearch(condition: ValuelistCondition, term: string) {
@@ -285,16 +283,16 @@ export class GlobisValuelistFilter extends ValuelistFilter {
       this.otherDisplayValues.set(displayValues);
     }
 
-    // fetches the display values of real values that are not among the first entries of the valuelist
-    resolveDisplayValues(realValues: any[]): Promise<void> {
-      const valuelist = this.ngGrid.getValuelistForFilter(this.params);
-      const unknown = realValues.filter((realValue) => this.getRawDisplayValue(realValue) === undefined);
-      if (!valuelist || !unknown.length) {
-        return Promise.resolve();
+    // The model of a filter keeps the display values of its values, for the values that are not among the first entries
+    // of the valuelist. Asking them with valuelist.getDisplayValue breaks Servoy: the column valuelist is linked to the
+    // foundset, and when the foundset changes size Servoy replays that answer without a client value (TypeError on
+    // getInternalState in ValuelistType.fromServerToClient).
+    rememberModelDisplayValues(model: any) {
+      if (model?.type === 'equals' && model.uiValue != null) {
+        this.rememberDisplayValues([[model.filter, model.uiValue]]);
+      } else if (model?.displayValues) {
+        this.rememberDisplayValues(model.values.map((value: any, index: number) => [value, model.displayValues[index]]));
       }
-      return Promise.all(unknown.map((realValue) => firstValueFrom(valuelist.getDisplayValue(realValue))
-        .then((displayValue) => [realValue, displayValue], () => [realValue, undefined])))
-        .then((pairs) => this.rememberDisplayValues(pairs.filter((pair) => pair[1] !== undefined && pair[1] !== null)));
     }
 
     onOperatorChange(condition: ValuelistCondition, event: Event) {
@@ -382,7 +380,8 @@ export class GlobisValuelistFilter extends ValuelistFilter {
         // the same model the floating filter makes, so it keeps showing the value
         return { filterType: this.getFilterType(values[0]), type: 'equals', filter: values[0], uiValue: this.getDisplayValue(values[0]) };
       }
-      return { filterType: this.getFilterType(values[0]), type: operator === 'equals' ? 'in' : 'notIn', values };
+      const displayValues = values.map((value) => this.getRawDisplayValue(value) ?? String(value));
+      return { filterType: this.getFilterType(values[0]), type: operator === 'equals' ? 'in' : 'notIn', values, displayValues };
     }
 
     getFilterType(realValue: any): string {
@@ -405,25 +404,12 @@ export class GlobisValuelistFilter extends ValuelistFilter {
 
     // the floating filter shows one value it can edit, or a summary of the popup filter
     onParentModelChanged(parentModel: any) {
-      // the last model wins, also when the display values of an earlier one arrive later
-      const call = ++this.parentModelCalls;
-      void this.valuelistValuesDefer.promise
-        .then(() => this.resolveDisplayValues(this.getModelValues(parentModel)))
-        .then(() => {
-          if (call !== this.parentModelCalls) return;
-          const summary = parentModel && (parentModel.operator || parentModel.type !== 'equals') ? this.getSummary(parentModel) : null;
-          this.hasFilter.set(!!parentModel);
-          this.floatingSummary.set(summary);
-          this.setFilterUIValue(summary === null && parentModel ? parentModel.uiValue : '');
-        });
-    }
-
-    getModelValues(model: any): any[] {
-      if (!model) {
-        return [];
-      }
-      const conditions = model.operator ? model.conditions : [model];
-      return conditions.flatMap((condition: any) => condition.values ?? (condition.type === 'equals' ? [condition.filter] : []));
+      void this.valuelistValuesDefer.promise.then(() => {
+        const summary = parentModel && (parentModel.operator || parentModel.type !== 'equals') ? this.getSummary(parentModel) : null;
+        this.hasFilter.set(!!parentModel);
+        this.floatingSummary.set(summary);
+        this.setFilterUIValue(summary === null && parentModel ? parentModel.uiValue : '');
+      });
     }
 
     getSummary(model: any): string {
@@ -437,16 +423,22 @@ export class GlobisValuelistFilter extends ValuelistFilter {
     getConditionSummary(model: any): string {
       switch (model.type) {
         case 'equals':
-          return this.getDisplayValue(model.filter);
+          return model.uiValue ?? this.getDisplayValue(model.filter);
         case 'blank':
           return this.blank;
         case 'notBlank':
           return this.notBlank;
         case 'in':
-          return '(' + model.values.length + ') ' + model.values.map((value: any) => this.getDisplayValue(value)).join(', ');
+          return '(' + model.values.length + ') ' + this.getListDisplayValues(model).join(', ');
         default:
-          return '≠ ' + model.values.map((value: any) => this.getDisplayValue(value)).join(', ');
+          return '≠ ' + this.getListDisplayValues(model).join(', ');
       }
+    }
+
+    // the display values kept in the model, or those the valuelist knows for a model of before they were kept
+    getListDisplayValues(model: any): string[] {
+      return model.values.map((value: any, index: number) =>
+        model.displayValues ? this.getFormatedDisplayValue(model.displayValues[index]) : this.getDisplayValue(value));
     }
 
     // the power grid filters its rows here, the data grid on the server
