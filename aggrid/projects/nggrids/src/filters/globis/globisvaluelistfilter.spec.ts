@@ -16,7 +16,10 @@ function createGrid(resolvedDisplayData = true): any {
     const all = () => [...valuelistValues(), ...otherValues()];
     const valuelist = {
         filterList: (term: string) => of(term ? all().filter((v) => v.displayValue.toLowerCase().includes(term.toLowerCase())) : valuelistValues()),
-        getDisplayValue: (realValue: any) => of(all().find((v) => v.realValue === realValue)?.displayValue ?? null)
+        // the column valuelist is linked to the foundset: Servoy breaks when it replays a getDisplayValue answer, so the filter never asks
+        getDisplayValue: () => {
+            throw new Error('the filter must not ask the valuelist for display values');
+        }
     };
     return {
         agGridOptions: { localeText: {} },
@@ -127,7 +130,7 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
 
         apply(fixture);
 
-        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [1, 2] });
+        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [1, 2], displayValues: ['Open', 'Closed'] });
         expect(params.filterChangedCallback).toHaveBeenCalledTimes(1);
     });
 
@@ -142,7 +145,7 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
         (fixture.nativeElement.querySelector('input[type=text]') as HTMLInputElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
 
         expect(hidePopup).toHaveBeenCalledTimes(2);
-        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [1, 2] });
+        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [1, 2], displayValues: ['Open', 'Closed'] });
     });
 
     it('opens again with the applied filter', () => {
@@ -168,7 +171,7 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
         clickValue(fixture, 'Open');
         apply(fixture);
 
-        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'notIn', values: [1] });
+        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'notIn', values: [1], displayValues: ['Open'] });
     });
 
     it('filters on blank without a list', () => {
@@ -222,7 +225,7 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
         checkboxes(fixture)[0].click();
         apply(fixture);
 
-        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [2, 3] });
+        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [2, 3], displayValues: ['Closed', 'Cancelled'] });
     });
 
     it('shows a saved filter', () => {
@@ -233,9 +236,9 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
         expect(checkboxes(fixture).slice(0, 4).map((c) => c.checked)).toEqual([false, false, true, true]);
     });
 
-    it('fetches the display value of a saved value after the first entries', async () => {
-        fixture.componentInstance.setModel({ filterType: 'number', type: 'in', values: [1, 101] });
-        await settle(fixture);
+    it('shows a saved value after the first entries with the display value kept in the filter', () => {
+        fixture.componentInstance.setModel({ filterType: 'number', type: 'in', values: [1, 101], displayValues: ['Open', 'Zeebrugge'] });
+        fixture.detectChanges();
 
         const labels = Array.from(fixture.nativeElement.querySelectorAll('label') as NodeListOf<HTMLLabelElement>).map((l) => l.textContent.trim());
         expect(labels.slice(1, 3)).toEqual(['Zeebrugge', 'Open']);
@@ -360,8 +363,8 @@ describe('GlobisValuelistFilter floating filter (GLR-7459)', () => {
         expect(inputs().length).toBe(1);
     });
 
-    it('shows the display value of a value after the first entries of the valuelist', async () => {
-        await showParentModel({ filterType: 'number', type: 'in', values: [1, 101] });
+    it('shows the display value kept in the filter of a value after the first entries of the valuelist', async () => {
+        await showParentModel({ filterType: 'number', type: 'in', values: [1, 101], displayValues: ['Open', 'Zeebrugge'] });
 
         expect(fixture.componentInstance.floatingSummary()).toBe('(2) Open, Zeebrugge');
     });
