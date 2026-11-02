@@ -788,3 +788,25 @@ describe('isNullGroupKey (ECS-2940)', () => {
         expect(isNullGroupKey(1)).toBe(false);
     });
 });
+
+describe('DataGrid.isRowsOfGroup (ECS-2799)', () => {
+    const grid = { log: { warn: vi.fn() }, isSameGroupKey: DataGrid.prototype.isSameGroupKey } as unknown as DataGrid;
+    const isRowsOfGroup = (rows: any[], groupKeys: any[], groupNodes: any[]) =>
+        DataGrid.prototype.isRowsOfGroup.call(grid, rows, [{ field: 'status', displayName: 'Status' }], groupKeys, groupNodes);
+    // the group of real value 0, which the valuelist of the column shows as Acquired
+    const acquiredGroup = [{ data: { status: 'Acquired', _unresolved_status: 0 } }];
+
+    it('accepts root rows of a valuelist column, which only have the display value', () => {
+        expect(isRowsOfGroup([{ status: 'Acquired' }, { status: 'Acquired' }], [0], acquiredGroup)).toBe(true);
+    });
+
+    it('rejects a root row of another group of a valuelist column', () => {
+        expect(isRowsOfGroup([{ status: 'Acquired' }, { status: 'Sold' }], [0], acquiredGroup)).toBe(false);
+    });
+
+    it('compares the rows of a column without valuelist with the group key', () => {
+        const group = [{ data: { status: 'A' } }];
+        expect(isRowsOfGroup([{ status: 'A' }], ['A'], group)).toBe(true);
+        expect(isRowsOfGroup([{ status: 'B' }], ['A'], group)).toBe(false);
+    });
+});

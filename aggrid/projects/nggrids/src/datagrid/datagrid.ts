@@ -2463,13 +2463,15 @@ export class DataGrid extends NGGridDirective {
 	/**
 	 * [ECS-2799] Whether all rows loaded for a group have its key in each group column. They do not when the root
 	 * foundset is sorted differently than the groups (e.g. another null precedence) or changed after the groups were counted.
+	 * A root row of a column with a valuelist only has the display value (the column resolves the valuelist), so the rows
+	 * are also compared with the display value of the group node, next to the key (real value).
 	 */
-	isRowsOfGroup(rows: any[], rowGroupCols: any[], groupKeys: any[]): boolean {
+	isRowsOfGroup(rows: any[], rowGroupCols: any[], groupKeys: any[], groupNodes: any[]): boolean {
 		for (const row of rows) {
 			for (let i = 0; i < rowGroupCols.length; i++) {
 				const field = rowGroupCols[i].field;
 				const rowValue = row['_unresolved_' + field] !== undefined ? row['_unresolved_' + field] : row[field];
-				if (!this.isSameGroupKey(rowValue, groupKeys[i])) {
+				if (!this.isSameGroupKey(rowValue, groupKeys[i]) && !this.isSameGroupKey(rowValue, groupNodes[i]?.data?.[field])) {
 					this.log.warn('Row ' + row._svyFoundsetIndex + ' has ' + rowGroupCols[i].displayName + ' ' + JSON.stringify(rowValue) + ', not the key of its group ' + JSON.stringify(groupKeys[i]));
 					return false;
 				}
@@ -6158,7 +6160,7 @@ class FoundsetServer {
 					resolve();
 					const groupRows = rows.slice(0, groupRowCount);
 					// rows of another group mean that the root foundset is not in the order of the groups
-					if (!dataGrid.isRowsOfGroup(groupRows, rowGroupCols, groupKeys)) {
+					if (!dataGrid.isRowsOfGroup(groupRows, rowGroupCols, groupKeys, groupNodes)) {
 						callback([], 0);
 						dataGrid.onRowsOfOtherGroup(groupKeys);
 						return;
