@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { FilterDirective } from './filter';
 import { FormattingService, MaskFormat } from '@servoy/public';
 import { createTimeMaskFormat, parseMaskedTime, toHHmm } from '../time-minutes';
+import type { IAfterGuiAttachedParams } from 'ag-grid-community';
 import { getPopupBodyMaxHeight } from './globis/popupheight';
 
 let filterCount = 0;
@@ -101,6 +102,7 @@ export class TimeFilter extends FilterDirective {
     floatingModel: any = null;
 
     private readonly masks: MaskFormat[] = [];
+    private hidePopup: (() => void) | undefined;
     private readonly listeners: Array<() => void> = [];
 
     constructor(private renderer: Renderer2, private formattingService: FormattingService, @Inject(DOCUMENT) private doc: Document) {
@@ -167,6 +169,7 @@ export class TimeFilter extends FilterDirective {
         return this.elementToRef()!.nativeElement.value;
     }
 
+    // Apply and Enter filter and close the popup
     onApplyFilter() {
         this.normalizeInputs();
         if (this.isFloating) {
@@ -175,6 +178,7 @@ export class TimeFilter extends FilterDirective {
             this.floatingParams.parentFilterInstance((instance: any) => instance.applyFloatingValues(from, to));
         } else {
             this.doFilter();
+            this.hidePopup?.();
         }
     }
 
@@ -225,9 +229,15 @@ export class TimeFilter extends FilterDirective {
         }
     }
 
+    // [GLR-7459] the popup always has Apply and Clear, whatever the buttons of the column say
+    hasApplyButton(): boolean {
+        return !this.isFloating;
+    }
+
     // the popup opens with the applied filter, also when it was changed without applying it
-    afterGuiAttached(): void {
+    afterGuiAttached(params?: IAfterGuiAttachedParams): void {
         if (!this.isFloating) {
+            this.hidePopup = params?.hidePopup;
             this.showModel(this.model);
             this.fitToWindow();
         }

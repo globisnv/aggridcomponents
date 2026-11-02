@@ -64,23 +64,47 @@ describe('TimeFilter (GLR-7459)', () => {
             popup.detectChanges();
         }
 
-        it('shows once the first condition filters and joins the two with AND or OR', () => {
+        function apply() {
+            (popup.nativeElement.querySelectorAll('.ag-filter-apply-panel button')[0] as HTMLButtonElement).click();
+            popup.detectChanges();
+        }
+
+        it('always has Apply and Clear, whatever the buttons of the column say', () => {
+            expect(params.buttons).toEqual([]);
+            expect(popup.nativeElement.querySelectorAll('.ag-filter-apply-panel button').length).toBe(2);
+        });
+
+        it('shows once the first condition filters and joins the two with AND or OR on Apply', () => {
             change(selects()[0], 'greaterThanOrEqual');
             expect(secondCondition().hidden).toBe(true);
 
             change(timeInputs()[0], '08:00');
             expect(secondCondition().hidden).toBe(false);
+            expect(params.filterChangedCallback).not.toHaveBeenCalled();
+            apply();
             expect(popup.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'greaterThanOrEqual', uiValue: '08:00', filter: 480 });
 
             change(selects()[1], 'lessThanOrEqual');
             change(timeInputs()[2], '17:00');
+            apply();
             expect(popup.componentInstance.getModel()).toEqual({ filterType: 'number', operator: 'AND', conditions: [
                 { filterType: 'number', type: 'greaterThanOrEqual', uiValue: '08:00', filter: 480 },
                 { filterType: 'number', type: 'lessThanOrEqual', uiValue: '17:00', filter: 1020 }
             ] });
 
             radios()[1].click();
+            apply();
             expect(popup.componentInstance.getModel().operator).toBe('OR');
+        });
+
+        it('filters on Enter and closes the popup', () => {
+            const hidePopup = vi.fn();
+            popup.componentInstance.afterGuiAttached({ hidePopup });
+            timeInputs()[0].value = '08:00';
+            timeInputs()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+
+            expect(popup.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'equals', uiValue: '08:00', filter: 480 });
+            expect(hidePopup).toHaveBeenCalledTimes(1);
         });
 
         it('shows a saved combined filter', () => {

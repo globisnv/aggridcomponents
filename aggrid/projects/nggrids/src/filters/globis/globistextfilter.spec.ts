@@ -69,21 +69,34 @@ describe('GlobisTextFilter (GLR-7459)', () => {
             fixture.detectChanges();
         }
 
+        function apply() {
+            (fixture.nativeElement.querySelectorAll('.ag-filter-apply-panel button')[0] as HTMLButtonElement).click();
+            fixture.detectChanges();
+        }
+
         describe('of a text column', () => {
             beforeEach(() => {
                 params = popupParams();
                 fixture = createFilter(params);
             });
 
-            it('filters on contains after the debounce of the column', () => {
-                vi.useFakeTimers();
-                type(inputs()[0], 'abc', false);
+            it('always has Apply and Clear, whatever the buttons of the column say', () => {
+                expect(params.buttons).toEqual([]);
+                expect(fixture.nativeElement.querySelectorAll('.ag-filter-apply-panel button').length).toBe(2);
+            });
 
-                vi.advanceTimersByTime(999);
+            it('filters on Apply, not while typing, and closes the popup', () => {
+                vi.useFakeTimers();
+                const hidePopup = vi.fn();
+                fixture.componentInstance.afterGuiAttached({ hidePopup });
+                type(inputs()[0], 'abc', false);
+                vi.advanceTimersByTime(2000);
                 expect(params.filterChangedCallback).not.toHaveBeenCalled();
-                vi.advanceTimersByTime(1);
+
+                apply();
 
                 expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'text', type: 'contains', filter: 'abc' });
+                expect(hidePopup).toHaveBeenCalledTimes(1);
             });
 
             it('filters on a list of values separated by ;', () => {
@@ -108,12 +121,14 @@ describe('GlobisTextFilter (GLR-7459)', () => {
                 expect(selects().length).toBe(2);
 
                 selectOperator(1, 'blank');
+                apply();
                 expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'text', operator: 'AND', conditions: [
                     { filterType: 'text', type: 'startsWith', filter: 'ab' },
                     { filterType: 'text', type: 'blank' }
                 ] });
 
                 radios()[1].click();
+                apply();
                 expect(fixture.componentInstance.getModel().operator).toBe('OR');
             });
 

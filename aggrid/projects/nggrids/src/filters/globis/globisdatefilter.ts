@@ -4,6 +4,7 @@ import { FormattingService, MaskFormat, ServoyPublicService } from '@servoy/publ
 import type { I18NListener } from '@servoy/public';
 import type { TempusDominus } from '@eonasdan/tempus-dominus';
 import { DateTime as DateTimeLuxon } from 'luxon';
+import type { IAfterGuiAttachedParams } from 'ag-grid-community';
 import { DateFilter } from '../datefilter';
 import { getPopupBodyMaxHeight } from './popupheight';
 
@@ -91,7 +92,8 @@ class DateCondition {
       <div class="ag-filter-body" [style.display]="showDateInput() ? null : 'none'">
         <div class="ag-input-wrapper" [style]="isFloating ? null : 'flex-direction: column; align-items: stretch; gap: 4px;'">
           <div class="input-group globis-date-filter-picker" id="filterdatetimepicker" data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepicker>
-            <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input" type="text" id="filterText" autocomplete="off" data-td-target="#filterdatetimepicker" #element>
+            <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input" type="text" id="filterText" autocomplete="off"
+              data-td-target="#filterdatetimepicker" (keydown.enter)="onApplyFilter()" #element>
             <span class="input-group-text" data-td-target="#filterdatetimepicker" data-td-toggle="datetimepicker">
               <i class="fas fa-calendar"></i>
             </span>
@@ -99,7 +101,7 @@ class DateCondition {
           <div [hidden]="isFloating || conditions[0].operator() !== 'inRange'" class="input-group globis-date-filter-picker" id="filterdatetimepickerTo"
             data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepickerTo>
             <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input"
-              type="text" id="filterTextTo" autocomplete="off" data-td-target="#filterdatetimepickerTo" #elementTo>
+              type="text" id="filterTextTo" autocomplete="off" data-td-target="#filterdatetimepickerTo" (keydown.enter)="onApplyFilter()" #elementTo>
             <span class="input-group-text" data-td-target="#filterdatetimepickerTo" data-td-toggle="datetimepicker">
               <i class="fas fa-calendar"></i>
             </span>
@@ -124,7 +126,7 @@ class DateCondition {
             <div class="ag-input-wrapper" style="flex-direction: column; align-items: stretch; gap: 4px;">
               <div class="input-group globis-date-filter-picker" id="filterdatetimepicker2" data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepicker2>
                 <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input"
-                  type="text" id="filterText2" autocomplete="off" data-td-target="#filterdatetimepicker2" #element2>
+                  type="text" id="filterText2" autocomplete="off" data-td-target="#filterdatetimepicker2" (keydown.enter)="onApplyFilter()" #element2>
                 <span class="input-group-text" data-td-target="#filterdatetimepicker2" data-td-toggle="datetimepicker">
                   <i class="fas fa-calendar"></i>
                 </span>
@@ -132,7 +134,7 @@ class DateCondition {
               <div [hidden]="conditions[1].operator() !== 'inRange'" class="input-group globis-date-filter-picker" id="filterdatetimepickerTo2"
                 data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepickerTo2>
                 <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input"
-                  type="text" id="filterTextTo2" autocomplete="off" data-td-target="#filterdatetimepickerTo2" #elementTo2>
+                  type="text" id="filterTextTo2" autocomplete="off" data-td-target="#filterdatetimepickerTo2" (keydown.enter)="onApplyFilter()" #elementTo2>
                 <span class="input-group-text" data-td-target="#filterdatetimepickerTo2" data-td-toggle="datetimepicker">
                   <i class="fas fa-calendar"></i>
                 </span>
@@ -172,11 +174,11 @@ class DateCondition {
         <div class="ag-filter-body">
           <div class="ag-input-wrapper" style="align-items: center; gap: 4px;">
             <input class="ag-filter-filter ag-input-field-input ag-text-field-input" style="min-width: 0; flex: 1 1 0;" type="number" step="1" autocomplete="off"
-              [value]="condition.days() ?? ''" (change)="onDaysChange(condition.days, $event)" (keydown.enter)="onDaysChange(condition.days, $event)">
+              [value]="condition.days() ?? ''" (change)="onDaysChange(condition.days, $event)" (keydown.enter)="onDaysChange(condition.days, $event); onApplyFilter()">
             @if (condition.operator() === 'betweenDayOffsets') {
               <span>–</span>
               <input class="ag-filter-filter ag-input-field-input ag-text-field-input" style="min-width: 0; flex: 1 1 0;" type="number" step="1" autocomplete="off"
-                [value]="condition.daysTo() ?? ''" (change)="onDaysChange(condition.daysTo, $event)" (keydown.enter)="onDaysChange(condition.daysTo, $event)">
+                [value]="condition.daysTo() ?? ''" (change)="onDaysChange(condition.daysTo, $event)" (keydown.enter)="onDaysChange(condition.daysTo, $event); onApplyFilter()">
             }
           </div>
         </div>
@@ -193,6 +195,7 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
     private readonly renderer = inject(Renderer2);
     private readonly document = inject(DOCUMENT);
     private i18nListener: I18NListener | null = null;
+    private hidePopup: (() => void) | undefined;
 
     readonly bodyRef = viewChild<ElementRef>('body');
     readonly bodyMaxHeight = signal<number | null>(null);
@@ -282,9 +285,15 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
         return this.isFloating ? this.floatingSummary() === null : this.usesDate(this.conditions[0]);
     }
 
+    // [GLR-7459] the popup always has Apply and Clear, whatever the buttons of the column say
+    hasApplyButton(): boolean {
+        return !this.isFloating;
+    }
+
     // the popup opens with the applied filter, also when it was changed without applying it
-    afterGuiAttached(): void {
+    afterGuiAttached(params?: IAfterGuiAttachedParams): void {
         if (!this.isFloating) {
+            this.hidePopup = params?.hidePopup;
             this.showModel(this.model);
             this.fitToWindow();
         }
@@ -362,6 +371,12 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
     onJoinChange(join: 'AND' | 'OR') {
         this.join.set(join);
         this.valueChanged();
+    }
+
+    // Apply and Enter filter and close the popup
+    onApplyFilter() {
+        super.onApplyFilter();
+        if (!this.isFloating) this.hidePopup?.();
     }
 
     // clearing removes the filter right away, also with an Apply button, like TimeFilter

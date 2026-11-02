@@ -1,9 +1,13 @@
 import { ChangeDetectionStrategy, Component, ElementRef, Signal, computed, signal, viewChild } from '@angular/core';
 import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+import type { IAfterGuiAttachedParams } from 'ag-grid-community';
+import { firstValueFrom } from 'rxjs';
 import { ValuelistFilter } from '../valuelistfilter';
 import { getPopupBodyMaxHeight } from './popupheight';
 
 let filterCount = 0;
+// the delay of the search while typing
+const SEARCH_DELAY = 300;
 
 /**
  * The operator and the checked real values of one condition of the popup.
@@ -13,15 +17,25 @@ class ValuelistCondition {
     readonly selected = signal<any[]>([]);
     readonly selectedSet = computed(() => new Set(this.selected()));
     readonly searchTerm = signal('');
+    // the values the server found for the search term, null without a search
+    readonly results = signal<any[] | null>(null);
+    searchTimer: ReturnType<typeof setTimeout> | undefined;
     readonly visibleValues: Signal<any[]>;
     readonly allVisibleSelected: Signal<boolean>;
     // a condition without values does not filter
     readonly isComplete = computed(() => this.operator() === 'blank' || this.operator() === 'notBlank' || this.selected().length > 0);
 
-    constructor(values: Signal<any[]>, displayValue: (item: any) => string) {
+    constructor(values: Signal<any[]>, displayValueOf: (realValue: any) => any) {
         this.visibleValues = computed(() => {
-            const term = this.searchTerm().toLowerCase();
-            return values().filter((item: any) => displayValue(item).toLowerCase().includes(term));
+            const results = this.results();
+            if (results) {
+                return results;
+            }
+            // without a search: the checked values that are not among the first entries of the valuelist, then those entries
+            const list = values();
+            const missing = this.selected().filter((value) => !list.some((item: any) => item.realValue === value))
+                .map((value) => ({ realValue: value, displayValue: displayValueOf(value) }));
+            return missing.length ? [...missing, ...list] : list;
         });
         this.allVisibleSelected = computed(() => this.visibleValues().every((item: any) => this.selectedSet().has(item.realValue)));
     }
@@ -83,7 +97,7 @@ class ValuelistCondition {
               <div class="ag-filter-body">
                 <div class="ag-input-wrapper">
                   <input class="ag-filter-filter ag-input-field-input" type="text" autocomplete="off" [placeholder]="searchOoo"
-                    [value]="condition.searchTerm()" (input)="condition.searchTerm.set($any($event.target).value)" #search>
+                    [value]="condition.searchTerm()" (input)="onSearch(condition, $any($event.target).value)" (keydown.enter)="onApplyFilter()" #search>
                 </div>
               </div>
               <div style="overflow-y: auto;" [style.max-height.px]="visibleConditions().length > 1 ? 150 : 250">
@@ -139,11 +153,14 @@ export class GlobisValuelistFilter extends ValuelistFilter {
     andCondition!: string;
     orCondition!: string;
 
-    // the values a condition can check: the valuelist without its empty entry
-    private readonly listValues = computed(() => ((this._valuelistValues() || []) as any[]).filter((item: any) => item.realValue !== null && item.realValue !== undefined));
+    // the values a condition can check without a search: the valuelist without its empty entry. Servoy gives at most
+    // 100 entries of a database valuelist, so the search asks the server for the others
+    private readonly listValues = computed(() => this.withoutEmpty(this._valuelistValues() || []));
+    // the display values of real values that are not among those entries: found by a search, or fetched for a saved filter
+    private readonly otherDisplayValues = signal(new Map<any, any>());
     readonly conditions = [
-        new ValuelistCondition(this.listValues, (item) => this.getFormatedDisplayValue(item.displayValue)),
-        new ValuelistCondition(this.listValues, (item) => this.getFormatedDisplayValue(item.displayValue))
+        new ValuelistCondition(this.listValues, (realValue) => this.getRawDisplayValue(realValue) ?? realValue),
+        new ValuelistCondition(this.listValues, (realValue) => this.getRawDisplayValue(realValue) ?? realValue)
     ];
     readonly join = signal<'AND' | 'OR'>('AND');
     // the second condition shows once the first one filters
@@ -152,6 +169,8 @@ export class GlobisValuelistFilter extends ValuelistFilter {
     readonly floatingSummary = signal<string | null>(null);
     // whether the floating filter shows the clear button
     readonly hasFilter = signal(false);
+    private hidePopup: (() => void) | undefined;
+    private parentModelCalls = 0;
 
     agInit(params: any): void {
         super.agInit(params);
@@ -167,9 +186,21 @@ export class GlobisValuelistFilter extends ValuelistFilter {
         this.orCondition = localeText['orCondition'] || 'OR';
     }
 
+    // [GLR-7459] the popup always has Apply and Clear, whatever the buttons of the column say
+    hasApplyButton(): boolean {
+      return !this.isFloating;
+    }
+
+    // Apply and Enter filter and close the popup
+    onApplyFilter() {
+      super.onApplyFilter();
+      if (!this.isFloating) this.hidePopup?.();
+    }
+
     // the popup opens with the applied filter, also when it was changed without applying it
-    afterGuiAttached(): void {
+    afterGuiAttached(params?: IAfterGuiAttachedParams): void {
       if (!this.isFloating) {
+        this.hidePopup = params?.hidePopup;
         this.showModel(this.model);
         this.fitToWindow();
         setTimeout(() => this.searchRef()?.nativeElement.focus(), 0);
@@ -217,6 +248,53 @@ export class GlobisValuelistFilter extends ValuelistFilter {
       condition.operator.set(operator);
       condition.selected.set(values);
       condition.searchTerm.set('');
+      condition.results.set(null);
+      void this.resolveDisplayValues(values);
+    }
+
+    onSearch(condition: ValuelistCondition, term: string) {
+      condition.searchTerm.set(term);
+      clearTimeout(condition.searchTimer);
+      if (!term.trim()) {
+        condition.results.set(null);
+        return;
+      }
+      condition.searchTimer = this.ngGrid.setTimeout(() => this.search(condition, term), SEARCH_DELAY);
+    }
+
+    // the server searches the whole valuelist, also the values after its first entries
+    search(condition: ValuelistCondition, term: string) {
+      this.ngGrid.getValuelistForFilter(this.params)?.filterList(term).subscribe((values: any[]) => {
+        // a newer search is under way
+        if (condition.searchTerm() !== term) return;
+        const found = this.withoutEmpty(values);
+        this.rememberDisplayValues(found.map((item: any) => [item.realValue, item.displayValue]));
+        condition.results.set(found);
+      });
+    }
+
+    withoutEmpty(values: any[]): any[] {
+      return values.filter((item: any) => item.realValue !== null && item.realValue !== undefined);
+    }
+
+    rememberDisplayValues(pairs: any[][]) {
+      const displayValues = new Map(this.otherDisplayValues());
+      for (const [realValue, displayValue] of pairs) {
+        displayValues.set(realValue, displayValue);
+      }
+      this.otherDisplayValues.set(displayValues);
+    }
+
+    // fetches the display values of real values that are not among the first entries of the valuelist
+    resolveDisplayValues(realValues: any[]): Promise<void> {
+      const valuelist = this.ngGrid.getValuelistForFilter(this.params);
+      const unknown = realValues.filter((realValue) => this.getRawDisplayValue(realValue) === undefined);
+      if (!valuelist || !unknown.length) {
+        return Promise.resolve();
+      }
+      return Promise.all(unknown.map((realValue) => firstValueFrom(valuelist.getDisplayValue(realValue))
+        .then((displayValue) => [realValue, displayValue], () => [realValue, undefined])))
+        .then((pairs) => this.rememberDisplayValues(pairs.filter((pair) => pair[1] !== undefined && pair[1] !== null)));
     }
 
     onOperatorChange(condition: ValuelistCondition, event: Event) {
@@ -314,19 +392,38 @@ export class GlobisValuelistFilter extends ValuelistFilter {
       return isNaN(realValue) ? 'text' : 'number';
     }
 
-    getDisplayValue(realValue: any): string {
+    // the display value of a real value, undefined when it is not known yet
+    getRawDisplayValue(realValue: any): any {
       const item = ((this.valuelistValues || []) as any[]).find((v: any) => v.realValue === realValue);
-      return item ? this.getFormatedDisplayValue(item.displayValue) : String(realValue);
+      return item ? item.displayValue : this.otherDisplayValues().get(realValue);
+    }
+
+    getDisplayValue(realValue: any): string {
+      const displayValue = this.getRawDisplayValue(realValue);
+      return displayValue === undefined ? String(realValue) : this.getFormatedDisplayValue(displayValue);
     }
 
     // the floating filter shows one value it can edit, or a summary of the popup filter
     onParentModelChanged(parentModel: any) {
-      void this.valuelistValuesDefer.promise.then(() => {
-        const summary = parentModel && (parentModel.operator || parentModel.type !== 'equals') ? this.getSummary(parentModel) : null;
-        this.hasFilter.set(!!parentModel);
-        this.floatingSummary.set(summary);
-        this.setFilterUIValue(summary === null && parentModel ? parentModel.uiValue : '');
-      });
+      // the last model wins, also when the display values of an earlier one arrive later
+      const call = ++this.parentModelCalls;
+      void this.valuelistValuesDefer.promise
+        .then(() => this.resolveDisplayValues(this.getModelValues(parentModel)))
+        .then(() => {
+          if (call !== this.parentModelCalls) return;
+          const summary = parentModel && (parentModel.operator || parentModel.type !== 'equals') ? this.getSummary(parentModel) : null;
+          this.hasFilter.set(!!parentModel);
+          this.floatingSummary.set(summary);
+          this.setFilterUIValue(summary === null && parentModel ? parentModel.uiValue : '');
+        });
+    }
+
+    getModelValues(model: any): any[] {
+      if (!model) {
+        return [];
+      }
+      const conditions = model.operator ? model.conditions : [model];
+      return conditions.flatMap((condition: any) => condition.values ?? (condition.type === 'equals' ? [condition.filter] : []));
     }
 
     getSummary(model: any): string {

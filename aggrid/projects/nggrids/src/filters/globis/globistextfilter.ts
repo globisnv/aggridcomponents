@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, WritableSignal, computed, inject, signal, viewChild } from '@angular/core';
 import { ServoyPublicService } from '@servoy/public';
 import type { I18NListener } from '@servoy/public';
+import type { IAfterGuiAttachedParams } from 'ag-grid-community';
 import { FilterDirective } from '../filter';
 import { getPopupBodyMaxHeight } from './popupheight';
 
@@ -83,10 +84,10 @@ class TextCondition {
                 <div class="ag-input-wrapper" style="flex-direction: column; gap: 4px;">
                   <input class="ag-filter-filter ag-input-field-input ag-text-field-input" type="text" autocomplete="off"
                     [attr.inputmode]="isNumber && !isList(condition) ? 'decimal' : null" [placeholder]="isList(condition) ? 'a; b; c' : labels()['filterOoo']"
-                    [value]="condition.value()" (input)="onValueInput(condition.value, $event)" (keydown.enter)="applyNow()" #value>
+                    [value]="condition.value()" (input)="onValueInput(condition.value, $event)" (keydown.enter)="onApplyFilter()" #value>
                   @if (condition.operator() === 'inRange') {
                     <input class="ag-filter-filter ag-input-field-input ag-text-field-input" type="text" autocomplete="off" inputmode="decimal"
-                      [placeholder]="labels()['filterOoo']" [value]="condition.valueTo()" (input)="onValueInput(condition.valueTo, $event)" (keydown.enter)="applyNow()">
+                      [placeholder]="labels()['filterOoo']" [value]="condition.valueTo()" (input)="onValueInput(condition.valueTo, $event)" (keydown.enter)="onApplyFilter()">
                   }
                 </div>
               </div>
@@ -108,6 +109,7 @@ export class GlobisTextFilter extends FilterDirective implements OnDestroy {
     private readonly servoy = inject(ServoyPublicService);
     private i18nListener: I18NListener | null = null;
     private debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    private hidePopup: (() => void) | undefined;
 
     readonly valueRef = viewChild<ElementRef>('value');
     readonly bodyRef = viewChild<ElementRef>('body');
@@ -169,9 +171,15 @@ export class GlobisTextFilter extends FilterDirective implements OnDestroy {
         return condition.operator() === 'in' || condition.operator() === 'notIn';
     }
 
+    // [GLR-7459] the popup always has Apply and Clear, whatever the buttons of the column say
+    hasApplyButton(): boolean {
+        return !this.isFloating;
+    }
+
     // the popup opens with the applied filter, also when it was changed without applying it
-    afterGuiAttached(): void {
+    afterGuiAttached(params?: IAfterGuiAttachedParams): void {
         if (!this.isFloating) {
+            this.hidePopup = params?.hidePopup;
             this.showModel(this.model);
             this.fitToWindow();
             setTimeout(() => this.valueRef()?.nativeElement.focus(), 0);
@@ -207,19 +215,14 @@ export class GlobisTextFilter extends FilterDirective implements OnDestroy {
         this.valueChanged();
     }
 
-    // typing filters after the debounce, like the AG Grid filters
     onValueInput(value: WritableSignal<string>, event: Event) {
         value.set((event.target as HTMLInputElement).value);
-        if (!this.hasApplyButton()) {
-            clearTimeout(this.debounceTimer);
-            this.debounceTimer = setTimeout(() => this.doFilter(), this.debounceMs);
-        }
     }
 
-    // Enter filters right away, also with an Apply button
-    applyNow() {
-        clearTimeout(this.debounceTimer);
-        this.doFilter();
+    // Apply and Enter filter and close the popup
+    onApplyFilter() {
+        super.onApplyFilter();
+        if (!this.isFloating) this.hidePopup?.();
     }
 
     onJoinChange(join: 'AND' | 'OR') {
@@ -229,7 +232,6 @@ export class GlobisTextFilter extends FilterDirective implements OnDestroy {
 
     // clearing removes the filter right away, also with an Apply button, like TimeFilter
     onClearFilter() {
-        clearTimeout(this.debounceTimer);
         this.showModel(null);
         this.doFilter();
     }

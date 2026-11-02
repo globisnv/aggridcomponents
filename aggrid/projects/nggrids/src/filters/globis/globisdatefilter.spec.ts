@@ -53,6 +53,15 @@ function enterDays(input: HTMLInputElement, value: string) {
     input.dispatchEvent(new Event('change'));
 }
 
+function apply(fixture: ComponentFixture<GlobisDateFilter>) {
+    (fixture.nativeElement.querySelectorAll('.ag-filter-apply-panel button')[0] as HTMLButtonElement).click();
+    fixture.detectChanges();
+}
+
+function pressEnter(input: HTMLInputElement) {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+}
+
 describe('GlobisDateFilter (GLR-7459)', () => {
     let messages: Map<string, string>;
 
@@ -75,29 +84,61 @@ describe('GlobisDateFilter (GLR-7459)', () => {
             fixture = createFilter(params);
         });
 
-        it('filters on today, this week and this month right away', () => {
+        it('always has Apply and Clear, whatever the buttons of the column say', () => {
+            expect(params.buttons).toEqual([]);
+            expect(fixture.nativeElement.querySelectorAll('.ag-filter-apply-panel button').length).toBe(2);
+        });
+
+        it('filters on today, this week and this month on Apply, and closes the popup', () => {
+            const hidePopup = vi.fn();
+            fixture.componentInstance.afterGuiAttached({ hidePopup });
             selectOperator(fixture, 'thisWeek');
+            expect(params.filterChangedCallback).not.toHaveBeenCalled();
+
+            apply(fixture);
 
             expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'date', type: 'thisWeek' });
             expect(params.filterChangedCallback).toHaveBeenCalledTimes(1);
+            expect(hidePopup).toHaveBeenCalledTimes(1);
         });
 
         it('waits for the days of today +/- days', () => {
             selectOperator(fixture, 'dayOffset');
+            apply(fixture);
             expect(fixture.componentInstance.getModel()).toBeUndefined();
             expect(params.filterChangedCallback).not.toHaveBeenCalled();
 
             enterDays(dayInputs(fixture)[0], '-1');
+            apply(fixture);
 
             expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'date', type: 'dayOffset', days: -1 });
+        });
+
+        it('filters on Enter in the days', () => {
+            selectOperator(fixture, 'dayOffset');
+            const days = dayInputs(fixture)[0];
+            days.value = '-2';
+            pressEnter(days);
+
+            expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'date', type: 'dayOffset', days: -2 });
+        });
+
+        it('filters on Enter in a date', () => {
+            const date = fixture.nativeElement.querySelector('#filterText') as HTMLInputElement;
+            date.value = '05/11/2026';
+            pressEnter(date);
+
+            expect(fixture.componentInstance.getModel()).toEqual(expect.objectContaining({ type: 'equals', dateFrom: '2026-11-05 00:00:00' }));
         });
 
         it('needs both day counts for between today +/- days', () => {
             selectOperator(fixture, 'betweenDayOffsets');
             enterDays(dayInputs(fixture)[0], '-7');
+            apply(fixture);
             expect(fixture.componentInstance.getModel()).toBeUndefined();
 
             enterDays(dayInputs(fixture)[1], '0');
+            apply(fixture);
 
             expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'date', type: 'betweenDayOffsets', days: -7, daysTo: 0 });
         });
@@ -123,6 +164,7 @@ describe('GlobisDateFilter (GLR-7459)', () => {
 
         it('removes the filter with Clear', async () => {
             selectOperator(fixture, 'today');
+            apply(fixture);
             fixture.componentInstance.onClearFilter();
             fixture.detectChanges();
             await fixture.whenStable();
@@ -171,13 +213,14 @@ describe('GlobisDateFilter (GLR-7459)', () => {
         it('joins the two conditions with AND or OR', () => {
             selectOperator(fixture, 'today');
             selectSecondOperator('blank');
+            apply(fixture);
             expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'date', operator: 'AND', conditions: [
                 { filterType: 'date', type: 'today' },
                 { filterType: 'date', type: 'blank' }
             ] });
 
             radios()[1].click();
-            fixture.detectChanges();
+            apply(fixture);
 
             expect(fixture.componentInstance.getModel().operator).toBe('OR');
         });
@@ -185,7 +228,7 @@ describe('GlobisDateFilter (GLR-7459)', () => {
         it('reads the date of the second condition', () => {
             selectOperator(fixture, 'thisMonth');
             (fixture.nativeElement.querySelector('#filterText2') as HTMLInputElement).value = '05/11/2026';
-            fixture.componentInstance.valueChanged();
+            apply(fixture);
 
             expect(fixture.componentInstance.getModel().conditions[1]).toEqual(expect.objectContaining(
                 { type: 'equals', uiValue: '05/11/2026', dateFrom: '2026-11-05 00:00:00', dateFromMs: new Date(2026, 10, 5).getTime() }));
@@ -264,12 +307,14 @@ describe('GlobisDateFilter (GLR-7459)', () => {
 
         it('removes the filter with the clear button and with Backspace', () => {
             selectOperator(popup, 'today');
+            popup.componentInstance.onApplyFilter();
             showParentModel(popup.componentInstance.getModel());
 
             (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
             expect(popup.componentInstance.getModel()).toBeNull();
 
             selectOperator(popup, 'today');
+            popup.componentInstance.onApplyFilter();
             showParentModel(popup.componentInstance.getModel());
             summaryInput()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }));
             expect(popup.componentInstance.getModel()).toBeNull();

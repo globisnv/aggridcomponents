@@ -3,16 +3,24 @@ import { of } from 'rxjs';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GlobisValuelistFilter } from './globisvaluelistfilter';
 
+// the first entries the valuelist gives without a search
 const valuelistValues = () => [
     { displayValue: 'Open', realValue: 1 },
     { displayValue: 'Closed', realValue: 2 },
     { displayValue: 'Cancelled', realValue: 3 }
 ];
+// a value after those first entries (Servoy gives at most 100 of a database valuelist): only a search finds it
+const otherValues = () => [{ displayValue: 'Zeebrugge', realValue: 101 }];
 
 function createGrid(resolvedDisplayData = true): any {
+    const all = () => [...valuelistValues(), ...otherValues()];
+    const valuelist = {
+        filterList: (term: string) => of(term ? all().filter((v) => v.displayValue.toLowerCase().includes(term.toLowerCase())) : valuelistValues()),
+        getDisplayValue: (realValue: any) => of(all().find((v) => v.realValue === realValue)?.displayValue ?? null)
+    };
     return {
         agGridOptions: { localeText: {} },
-        getValuelistForFilter: () => ({ filterList: () => of(valuelistValues()) }),
+        getValuelistForFilter: () => valuelist,
         getColumnFormat: (): any => null,
         detectChanges: () => { /* noop */ },
         setTimeout: (fn: () => void) => fn(),
@@ -38,6 +46,12 @@ function createFilter(params: any): ComponentFixture<GlobisValuelistFilter> {
     return fixture;
 }
 
+// lets the promises of the filter (display values fetched from the valuelist) settle
+async function settle(fixture: ComponentFixture<GlobisValuelistFilter>) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+}
+
 function checkboxes(fixture: ComponentFixture<GlobisValuelistFilter>): HTMLInputElement[] {
     return Array.from(fixture.nativeElement.querySelectorAll('input[type=checkbox]'));
 }
@@ -56,6 +70,23 @@ function selectOperator(fixture: ComponentFixture<GlobisValuelistFilter>, operat
     fixture.detectChanges();
 }
 
+function search(fixture: ComponentFixture<GlobisValuelistFilter>, term: string) {
+    const input = fixture.nativeElement.querySelector('input[type=text]') as HTMLInputElement;
+    input.value = term;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+}
+
+function apply(fixture: ComponentFixture<GlobisValuelistFilter>) {
+    (fixture.nativeElement.querySelectorAll('.ag-filter-apply-panel button')[0] as HTMLButtonElement).click();
+    fixture.detectChanges();
+}
+
+function clear(fixture: ComponentFixture<GlobisValuelistFilter>) {
+    (fixture.nativeElement.querySelectorAll('.ag-filter-apply-panel button')[1] as HTMLButtonElement).click();
+    fixture.detectChanges();
+}
+
 describe('GlobisValuelistFilter popup (GLR-7459)', () => {
     let params: any;
     let fixture: ComponentFixture<GlobisValuelistFilter>;
@@ -67,6 +98,11 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
 
     it('lists the valuelist values without the empty entry', () => {
         expect(checkboxes(fixture).length).toBe(4);
+    });
+
+    it('always has Apply and Clear, whatever the buttons of the column say', () => {
+        expect(params.buttons).toEqual([]);
+        expect(fixture.nativeElement.querySelectorAll('.ag-filter-apply-panel button').length).toBe(2);
     });
 
     it('lets the conditions scroll above the Apply panel when the popup does not fit in the window', () => {
@@ -84,16 +120,45 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
         expect(body.style.maxHeight).toBe((window.innerHeight - 300 - 40 - 8) + 'px');
     });
 
-    it('filters on all checked values', () => {
+    it('filters on all checked values on Apply', () => {
         clickValue(fixture, 'Open');
         clickValue(fixture, 'Closed');
+        expect(params.filterChangedCallback).not.toHaveBeenCalled();
+
+        apply(fixture);
 
         expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [1, 2] });
-        expect(params.filterChangedCallback).toHaveBeenCalledTimes(2);
+        expect(params.filterChangedCallback).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the popup on Apply and on Enter in the search', () => {
+        const hidePopup = vi.fn();
+        fixture.componentInstance.afterGuiAttached({ hidePopup });
+        clickValue(fixture, 'Open');
+        apply(fixture);
+        expect(hidePopup).toHaveBeenCalledTimes(1);
+
+        clickValue(fixture, 'Closed');
+        (fixture.nativeElement.querySelector('input[type=text]') as HTMLInputElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+
+        expect(hidePopup).toHaveBeenCalledTimes(2);
+        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [1, 2] });
+    });
+
+    it('opens again with the applied filter', () => {
+        clickValue(fixture, 'Open');
+        clickValue(fixture, 'Closed');
+        apply(fixture);
+        clickValue(fixture, 'Cancelled');
+
+        fixture.componentInstance.afterGuiAttached();
+
+        expect(fixture.componentInstance.conditions[0].selected()).toEqual([1, 2]);
     });
 
     it('makes the model of the floating filter for one checked value', () => {
         clickValue(fixture, 'Closed');
+        apply(fixture);
 
         expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'equals', filter: 2, uiValue: 'Closed' });
     });
@@ -101,12 +166,14 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
     it('excludes the checked values with does not equal', () => {
         selectOperator(fixture, 'notEqual');
         clickValue(fixture, 'Open');
+        apply(fixture);
 
         expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'notIn', values: [1] });
     });
 
     it('filters on blank without a list', () => {
         selectOperator(fixture, 'blank');
+        apply(fixture);
 
         expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'blank' });
         // the only list left is the one of the second condition
@@ -116,20 +183,44 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
 
     it('removes the filter when the last value is unchecked', () => {
         clickValue(fixture, 'Open');
+        apply(fixture);
         clickValue(fixture, 'Open');
+        apply(fixture);
 
         expect(fixture.componentInstance.getModel()).toBeNull();
     });
 
+    it('removes the filter with Clear right away', () => {
+        clickValue(fixture, 'Open');
+        apply(fixture);
+
+        clear(fixture);
+
+        expect(fixture.componentInstance.getModel()).toBeNull();
+        expect(params.filterChangedCallback).toHaveBeenCalledTimes(2);
+    });
+
+    it('searches the whole valuelist on the server, and keeps a checked value from a search in the list', () => {
+        search(fixture, 'zee');
+        expect(checkboxes(fixture).length).toBe(2);
+
+        clickValue(fixture, 'Zeebrugge');
+        apply(fixture);
+        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'equals', filter: 101, uiValue: 'Zeebrugge' });
+
+        search(fixture, '');
+        const labels = Array.from(fixture.nativeElement.querySelectorAll('label') as NodeListOf<HTMLLabelElement>).map((l) => l.textContent.trim());
+        expect(labels.slice(1, 3)).toEqual(['Zeebrugge', 'Open']);
+        expect(checkboxes(fixture)[1].checked).toBe(true);
+    });
+
     it('checks only the values the search shows with (Select All)', () => {
-        const search = fixture.nativeElement.querySelector('input[type=text]') as HTMLInputElement;
-        search.value = 'c';
-        search.dispatchEvent(new Event('input'));
-        fixture.detectChanges();
+        search(fixture, 'c');
+        // Closed and Cancelled: Open has no c
         expect(checkboxes(fixture).length).toBe(3);
 
         checkboxes(fixture)[0].click();
-        fixture.detectChanges();
+        apply(fixture);
 
         expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [2, 3] });
     });
@@ -140,6 +231,14 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
 
         expect((fixture.nativeElement.querySelector('select') as HTMLSelectElement).value).toBe('notEqual');
         expect(checkboxes(fixture).slice(0, 4).map((c) => c.checked)).toEqual([false, false, true, true]);
+    });
+
+    it('fetches the display value of a saved value after the first entries', async () => {
+        fixture.componentInstance.setModel({ filterType: 'number', type: 'in', values: [1, 101] });
+        await settle(fixture);
+
+        const labels = Array.from(fixture.nativeElement.querySelectorAll('label') as NodeListOf<HTMLLabelElement>).map((l) => l.textContent.trim());
+        expect(labels.slice(1, 3)).toEqual(['Zeebrugge', 'Open']);
     });
 
     it('applies the value picked in the floating filter, and removes the filter when it is emptied', () => {
@@ -182,22 +281,25 @@ describe('GlobisValuelistFilter second condition (GLR-7459)', () => {
     it('joins the two conditions with AND or OR', () => {
         clickValue(fixture, 'Open');
         selectSecondOperator('blank');
+        apply(fixture);
         expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', operator: 'AND', conditions: [
             { filterType: 'number', type: 'equals', filter: 1, uiValue: 'Open' },
             { filterType: 'number', type: 'blank' }
         ] });
 
         radios()[1].click();
-        fixture.detectChanges();
+        apply(fixture);
 
         expect(fixture.componentInstance.getModel().operator).toBe('OR');
-        expect(params.filterChangedCallback).toHaveBeenCalledTimes(3);
+        expect(params.filterChangedCallback).toHaveBeenCalledTimes(2);
     });
 
     it('drops the second condition when the first one no longer filters', () => {
         clickValue(fixture, 'Open');
         selectSecondOperator('blank');
+        apply(fixture);
         clickValue(fixture, 'Open');
+        apply(fixture);
 
         expect(fixture.componentInstance.getModel()).toBeNull();
         expect(selects().length).toBe(1);
@@ -216,25 +318,6 @@ describe('GlobisValuelistFilter second condition (GLR-7459)', () => {
     });
 });
 
-describe('GlobisValuelistFilter popup with an Apply button (GLR-7459)', () => {
-    it('only filters on Apply, and opens again with the applied filter', () => {
-        const params = popupParams(createGrid(), ['apply', 'clear']);
-        const fixture = createFilter(params);
-
-        clickValue(fixture, 'Open');
-        expect(params.filterChangedCallback).not.toHaveBeenCalled();
-
-        clickValue(fixture, 'Closed');
-        (fixture.nativeElement.querySelector('.ag-filter-apply-panel button') as HTMLButtonElement).click();
-        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'in', values: [1, 2] });
-
-        clickValue(fixture, 'Cancelled');
-        fixture.componentInstance.afterGuiAttached();
-        fixture.detectChanges();
-        expect(fixture.componentInstance.conditions[0].selected()).toEqual([1, 2]);
-    });
-});
-
 describe('GlobisValuelistFilter floating filter (GLR-7459)', () => {
     let fixture: ComponentFixture<GlobisValuelistFilter>;
 
@@ -245,8 +328,7 @@ describe('GlobisValuelistFilter floating filter (GLR-7459)', () => {
 
     async function showParentModel(model: any) {
         fixture.componentInstance.onParentModelChanged(model);
-        await fixture.componentInstance.valuelistValuesDefer.promise;
-        fixture.detectChanges();
+        await settle(fixture);
     }
 
     function inputs(): HTMLInputElement[] {
@@ -278,6 +360,12 @@ describe('GlobisValuelistFilter floating filter (GLR-7459)', () => {
         expect(inputs().length).toBe(1);
     });
 
+    it('shows the display value of a value after the first entries of the valuelist', async () => {
+        await showParentModel({ filterType: 'number', type: 'in', values: [1, 101] });
+
+        expect(fixture.componentInstance.floatingSummary()).toBe('(2) Open, Zeebrugge');
+    });
+
     it('shows two conditions as a summary', async () => {
         await showParentModel({ filterType: 'number', operator: 'OR', conditions: [
             { filterType: 'number', type: 'equals', filter: 1, uiValue: 'Open' },
@@ -307,9 +395,9 @@ describe('GlobisValuelistFilter clearing (GLR-7459)', () => {
     // only the last created fixture stays in the document, and a detached checkbox does not fire change on click
     async function applyInPopup(...realValues: number[]) {
         realValues.forEach((realValue) => popup.componentInstance.onValueChange(popup.componentInstance.conditions[0], realValue, true));
+        popup.componentInstance.onApplyFilter();
         fixture.componentInstance.onParentModelChanged(popup.componentInstance.getModel());
-        await fixture.componentInstance.valuelistValuesDefer.promise;
-        fixture.detectChanges();
+        await settle(fixture);
     }
 
     function clearButton(): HTMLButtonElement | null {
@@ -351,19 +439,6 @@ describe('GlobisValuelistFilter clearing (GLR-7459)', () => {
         typeahead.dispatchEvent(new Event('input'));
 
         expect(popup.componentInstance.getModel()).toBeNull();
-    });
-
-    it('removes the filter with Clear in a popup with an Apply button', () => {
-        const withApply = popupParams(createGrid(), ['apply', 'clear']);
-        const applyPopup = createFilter(withApply);
-        clickValue(applyPopup, 'Open');
-        (applyPopup.nativeElement.querySelector('.ag-filter-apply-panel button') as HTMLButtonElement).click();
-        expect(applyPopup.componentInstance.getModel()).not.toBeNull();
-
-        (applyPopup.nativeElement.querySelectorAll('.ag-filter-apply-panel button')[1] as HTMLButtonElement).click();
-
-        expect(applyPopup.componentInstance.getModel()).toBeNull();
-        expect(withApply.filterChangedCallback).toHaveBeenCalledTimes(2);
     });
 });
 
