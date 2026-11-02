@@ -141,6 +141,69 @@ describe('GlobisDateFilter (GLR-7459)', () => {
         });
     });
 
+    describe('second condition', () => {
+        let params: any;
+        let fixture: ComponentFixture<GlobisDateFilter>;
+        const selects = () => Array.from(fixture.nativeElement.querySelectorAll('select') as NodeListOf<HTMLSelectElement>);
+        const radios = () => Array.from(fixture.nativeElement.querySelectorAll('input[type=radio]') as NodeListOf<HTMLInputElement>);
+        // the block with AND / OR and the second condition
+        const secondCondition = () => selects()[1].closest('.ag-picker-field')!.parentElement as HTMLElement;
+
+        function selectSecondOperator(operator: string) {
+            selects()[1].value = operator;
+            selects()[1].dispatchEvent(new Event('change'));
+            fixture.detectChanges();
+        }
+
+        beforeEach(() => {
+            params = popupParams(createGrid());
+            fixture = createFilter(params);
+        });
+
+        it('shows once the first condition filters', () => {
+            expect(secondCondition().style.display).toBe('none');
+
+            selectOperator(fixture, 'today');
+
+            expect(secondCondition().style.display).toBe('');
+        });
+
+        it('joins the two conditions with AND or OR', () => {
+            selectOperator(fixture, 'today');
+            selectSecondOperator('blank');
+            expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'date', operator: 'AND', conditions: [
+                { filterType: 'date', type: 'today' },
+                { filterType: 'date', type: 'blank' }
+            ] });
+
+            radios()[1].click();
+            fixture.detectChanges();
+
+            expect(fixture.componentInstance.getModel().operator).toBe('OR');
+        });
+
+        it('reads the date of the second condition', () => {
+            selectOperator(fixture, 'thisMonth');
+            (fixture.nativeElement.querySelector('#filterText2') as HTMLInputElement).value = '05/11/2026';
+            fixture.componentInstance.valueChanged();
+
+            expect(fixture.componentInstance.getModel().conditions[1]).toEqual(expect.objectContaining(
+                { type: 'equals', uiValue: '05/11/2026', dateFrom: '2026-11-05 00:00:00', dateFromMs: new Date(2026, 10, 5).getTime() }));
+        });
+
+        it('shows a saved combined filter', () => {
+            fixture.componentInstance.setModel({ filterType: 'date', operator: 'OR', conditions: [
+                { filterType: 'date', type: 'dayOffset', days: -1 },
+                { filterType: 'date', type: 'afterDayOffset', days: 3 }
+            ] });
+            fixture.detectChanges();
+
+            expect(selects().map((select) => select.value)).toEqual(['dayOffset', 'afterDayOffset']);
+            expect(dayInputs(fixture).map((input) => input.value)).toEqual(['-1', '3']);
+            expect(radios().map((radio) => radio.checked)).toEqual([false, true]);
+        });
+    });
+
     describe('floating filter', () => {
         let popup: ComponentFixture<GlobisDateFilter>;
         let fixture: ComponentFixture<GlobisDateFilter>;
@@ -180,6 +243,9 @@ describe('GlobisDateFilter (GLR-7459)', () => {
 
             showParentModel({ filterType: 'date', type: 'lessThan', dateFromMs: new Date(2026, 10, 5).getTime() });
             expect(summaryInput()!.value).toBe('< 5/11/2026');
+
+            showParentModel({ filterType: 'date', operator: 'OR', conditions: [{ filterType: 'date', type: 'today' }, { filterType: 'date', type: 'blank' }] });
+            expect(summaryInput()!.value).toBe('Today OR Blank');
         });
 
         it('shows one date in the date input, with the clear button', () => {
@@ -221,6 +287,22 @@ describe('GlobisDateFilter (GLR-7459)', () => {
 
             filter.setModel({ filterType: 'date', type: 'afterDayOffset', days: -7 });
             expect([passes(now), passes(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 8))]).toEqual([true, false]);
+        });
+
+        it('joins two conditions with AND or OR', () => {
+            const filter = createFilter(popupParams(createGrid())).componentInstance;
+            const now = new Date();
+            const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12);
+            const passes = (value: any) => filter.doesFilterPass({ data: { delivery_date: value } });
+
+            filter.setModel({ filterType: 'date', operator: 'OR', conditions: [{ filterType: 'date', type: 'today' }, { filterType: 'date', type: 'blank' }] });
+            expect([passes(now), passes(null), passes(yesterday)]).toEqual([true, true, false]);
+
+            filter.setModel({ filterType: 'date', operator: 'AND', conditions: [
+                { filterType: 'date', type: 'afterDayOffset', days: -7 },
+                { filterType: 'date', type: 'notEqual', dateFromMs: now.getTime() }
+            ] });
+            expect([passes(now), passes(yesterday)]).toEqual([false, true]);
         });
     });
 });
