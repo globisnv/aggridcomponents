@@ -51,6 +51,81 @@ describe('TimeFilter (GLR-7459)', () => {
         expect([passes(479), passes(480), passes(481)]).toEqual([false, true, true]);
     });
 
+    describe('second condition', () => {
+        const selects = () => Array.from(popup.nativeElement.querySelectorAll('select') as NodeListOf<HTMLSelectElement>);
+        const radios = () => Array.from(popup.nativeElement.querySelectorAll('input[type=radio]') as NodeListOf<HTMLInputElement>);
+        // #element, #elementTo, #element2, #elementTo2
+        const timeInputs = () => Array.from(popup.nativeElement.querySelectorAll('input[type=text]') as NodeListOf<HTMLInputElement>);
+        const secondCondition = () => radios()[0].closest('.ag-filter-condition')!.parentElement as HTMLElement;
+
+        function change(element: HTMLInputElement | HTMLSelectElement, value: string) {
+            element.value = value;
+            element.dispatchEvent(new Event('change'));
+            popup.detectChanges();
+        }
+
+        it('shows once the first condition filters and joins the two with AND or OR', () => {
+            change(selects()[0], 'greaterThanOrEqual');
+            expect(secondCondition().hidden).toBe(true);
+
+            change(timeInputs()[0], '08:00');
+            expect(secondCondition().hidden).toBe(false);
+            expect(popup.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'greaterThanOrEqual', uiValue: '08:00', filter: 480 });
+
+            change(selects()[1], 'lessThanOrEqual');
+            change(timeInputs()[2], '17:00');
+            expect(popup.componentInstance.getModel()).toEqual({ filterType: 'number', operator: 'AND', conditions: [
+                { filterType: 'number', type: 'greaterThanOrEqual', uiValue: '08:00', filter: 480 },
+                { filterType: 'number', type: 'lessThanOrEqual', uiValue: '17:00', filter: 1020 }
+            ] });
+
+            radios()[1].click();
+            expect(popup.componentInstance.getModel().operator).toBe('OR');
+        });
+
+        it('shows a saved combined filter', () => {
+            popup.componentInstance.setModel({ filterType: 'number', operator: 'OR', conditions: [
+                { filterType: 'number', type: 'lessThan', filter: 480 },
+                { filterType: 'number', type: 'inRange', filter: 720, filterTo: 780 }
+            ] });
+            popup.detectChanges();
+
+            expect(timeInputs().map((input) => input.value)).toEqual(['08:00', '', '12:00', '13:00']);
+            expect(secondCondition().hidden).toBe(false);
+            expect(radios().map((radio) => radio.checked)).toEqual([false, true]);
+        });
+
+        it('passes two conditions joined with AND or OR on a power grid', () => {
+            const passes = (minutes: number | null) => popup.componentInstance.doesFilterPass({ data: { start_time: minutes } });
+            popup.componentInstance.setModel({ filterType: 'number', operator: 'OR', conditions: [
+                { filterType: 'number', type: 'lessThan', filter: 480 },
+                { filterType: 'number', type: 'blank' }
+            ] });
+            expect([passes(479), passes(null), passes(480)]).toEqual([true, true, false]);
+        });
+    });
+
+    it('shows two conditions in the floating filter as read-only text, which Backspace removes', () => {
+        const floating = createFilter({
+            filterParams: params,
+            column: { getColId: () => 'start_time' },
+            parentFilterInstance: (callback: (parent: any) => void) => callback(popup.componentInstance)
+        });
+        const model = { filterType: 'number', operator: 'AND', conditions: [
+            { filterType: 'number', type: 'greaterThanOrEqual', filter: 480 },
+            { filterType: 'number', type: 'lessThanOrEqual', filter: 1020 }
+        ] };
+        popup.componentInstance.setModel(model);
+        floating.componentInstance.onParentModelChanged(model);
+        floating.detectChanges();
+
+        const text = floating.nativeElement.querySelector('input[readonly]') as HTMLInputElement;
+        expect(text.value).toBe('≥ 08:00 AND ≤ 17:00');
+
+        text.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }));
+        expect(popup.componentInstance.getModel()).toBeNull();
+    });
+
     it('shows the operator in the floating filter and removes the filter with its clear button', () => {
         const floating = createFilter({
             filterParams: params,

@@ -94,7 +94,9 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
         selectOperator(fixture, 'blank');
 
         expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', type: 'blank' });
-        expect(checkboxes(fixture).length).toBe(0);
+        // the only list left is the one of the second condition
+        expect(checkboxes(fixture).length).toBe(4);
+        expect(fixture.nativeElement.querySelectorAll('input[type=text]').length).toBe(1);
     });
 
     it('removes the filter when the last value is unchecked', () => {
@@ -122,7 +124,7 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
         fixture.detectChanges();
 
         expect((fixture.nativeElement.querySelector('select') as HTMLSelectElement).value).toBe('notEqual');
-        expect(checkboxes(fixture).map((c) => c.checked)).toEqual([false, false, true, true]);
+        expect(checkboxes(fixture).slice(0, 4).map((c) => c.checked)).toEqual([false, false, true, true]);
     });
 
     it('applies the value picked in the floating filter, and removes the filter when it is emptied', () => {
@@ -131,6 +133,71 @@ describe('GlobisValuelistFilter popup (GLR-7459)', () => {
 
         fixture.componentInstance.onFloatingFilterChanged('equals', '');
         expect(fixture.componentInstance.getModel()).toBeNull();
+    });
+});
+
+describe('GlobisValuelistFilter second condition (GLR-7459)', () => {
+    let params: any;
+    let fixture: ComponentFixture<GlobisValuelistFilter>;
+
+    beforeEach(() => {
+        params = popupParams(createGrid());
+        fixture = createFilter(params);
+    });
+
+    const selects = () => Array.from(fixture.nativeElement.querySelectorAll('select') as NodeListOf<HTMLSelectElement>);
+    const radios = () => Array.from(fixture.nativeElement.querySelectorAll('input[type=radio]') as NodeListOf<HTMLInputElement>);
+
+    function selectSecondOperator(operator: string) {
+        selects()[1].value = operator;
+        selects()[1].dispatchEvent(new Event('change'));
+        fixture.detectChanges();
+    }
+
+    it('shows once the first condition filters', () => {
+        expect(selects().length).toBe(1);
+        expect(radios().length).toBe(0);
+
+        clickValue(fixture, 'Open');
+
+        expect(selects().length).toBe(2);
+        expect(radios().length).toBe(2);
+    });
+
+    it('joins the two conditions with AND or OR', () => {
+        clickValue(fixture, 'Open');
+        selectSecondOperator('blank');
+        expect(fixture.componentInstance.getModel()).toEqual({ filterType: 'number', operator: 'AND', conditions: [
+            { filterType: 'number', type: 'equals', filter: 1, uiValue: 'Open' },
+            { filterType: 'number', type: 'blank' }
+        ] });
+
+        radios()[1].click();
+        fixture.detectChanges();
+
+        expect(fixture.componentInstance.getModel().operator).toBe('OR');
+        expect(params.filterChangedCallback).toHaveBeenCalledTimes(3);
+    });
+
+    it('drops the second condition when the first one no longer filters', () => {
+        clickValue(fixture, 'Open');
+        selectSecondOperator('blank');
+        clickValue(fixture, 'Open');
+
+        expect(fixture.componentInstance.getModel()).toBeNull();
+        expect(selects().length).toBe(1);
+    });
+
+    it('shows a saved combined filter', () => {
+        fixture.componentInstance.setModel({ filterType: 'number', operator: 'OR', conditions: [
+            { filterType: 'number', type: 'in', values: [1, 2] },
+            { filterType: 'number', type: 'blank' }
+        ] });
+        fixture.detectChanges();
+
+        expect(selects().map((select) => select.value)).toEqual(['equals', 'blank']);
+        expect(radios().map((radio) => radio.checked)).toEqual([false, true]);
+        expect(fixture.componentInstance.conditions[0].selected()).toEqual([1, 2]);
     });
 });
 
@@ -149,7 +216,7 @@ describe('GlobisValuelistFilter popup with an Apply button (GLR-7459)', () => {
         clickValue(fixture, 'Cancelled');
         fixture.componentInstance.afterGuiAttached();
         fixture.detectChanges();
-        expect(fixture.componentInstance.selected()).toEqual([1, 2]);
+        expect(fixture.componentInstance.conditions[0].selected()).toEqual([1, 2]);
     });
 });
 
@@ -195,6 +262,15 @@ describe('GlobisValuelistFilter floating filter (GLR-7459)', () => {
         expect(fixture.componentInstance.floatingSummary()).toBeNull();
         expect(inputs().length).toBe(1);
     });
+
+    it('shows two conditions as a summary', async () => {
+        await showParentModel({ filterType: 'number', operator: 'OR', conditions: [
+            { filterType: 'number', type: 'equals', filter: 1, uiValue: 'Open' },
+            { filterType: 'number', type: 'blank' }
+        ] });
+
+        expect(inputs()[1].value).toBe('Open OR Blank');
+    });
 });
 
 describe('GlobisValuelistFilter clearing (GLR-7459)', () => {
@@ -215,7 +291,7 @@ describe('GlobisValuelistFilter clearing (GLR-7459)', () => {
 
     // only the last created fixture stays in the document, and a detached checkbox does not fire change on click
     async function applyInPopup(...realValues: number[]) {
-        realValues.forEach((realValue) => popup.componentInstance.onValueChange(realValue, true));
+        realValues.forEach((realValue) => popup.componentInstance.onValueChange(popup.componentInstance.conditions[0], realValue, true));
         fixture.componentInstance.onParentModelChanged(popup.componentInstance.getModel());
         await fixture.componentInstance.valuelistValuesDefer.promise;
         fixture.detectChanges();
@@ -238,7 +314,7 @@ describe('GlobisValuelistFilter clearing (GLR-7459)', () => {
         clearButton()!.click();
 
         expect(popup.componentInstance.getModel()).toBeNull();
-        expect(popup.componentInstance.selected()).toEqual([]);
+        expect(popup.componentInstance.conditions[0].selected()).toEqual([]);
     });
 
     it('removes the filter with Backspace or Delete on the summary', async () => {
@@ -292,6 +368,20 @@ describe('GlobisValuelistFilter.doesFilterPass on a power grid (GLR-7459)', () =
     it('passes the other values, but not blank ones, with not in', () => {
         filter.setModel({ filterType: 'number', type: 'notIn', values: [1] });
         expect([passes(1), passes(2), passes(null)]).toEqual([false, true, false]);
+    });
+
+    it('joins two conditions with AND or OR', () => {
+        filter.setModel({ filterType: 'number', operator: 'OR', conditions: [
+            { filterType: 'number', type: 'equals', filter: 1 },
+            { filterType: 'number', type: 'blank' }
+        ] });
+        expect([passes(1), passes(null), passes(2)]).toEqual([true, true, false]);
+
+        filter.setModel({ filterType: 'number', operator: 'AND', conditions: [
+            { filterType: 'number', type: 'notIn', values: [1] },
+            { filterType: 'number', type: 'notIn', values: [2] }
+        ] });
+        expect([passes(1), passes(2), passes(3)]).toEqual([false, false, true]);
     });
 
     it('passes blank or filled values', () => {

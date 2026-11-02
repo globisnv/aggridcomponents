@@ -1,9 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, computed, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { ServoyPublicService } from '@servoy/public';
+import { ChangeDetectionStrategy, Component, DOCUMENT, ElementRef, OnDestroy, Renderer2, WritableSignal, computed, inject, signal, viewChild } from '@angular/core';
+import { FormattingService, MaskFormat, ServoyPublicService } from '@servoy/public';
 import type { I18NListener } from '@servoy/public';
+import type { TempusDominus } from '@eonasdan/tempus-dominus';
+import { DateTime as DateTimeLuxon } from 'luxon';
 import { DateFilter } from '../datefilter';
+
+let filterCount = 0;
 
 // the relative operators of the extended filter builder, with the i18n key of their label and the English label
 const RELATIVE_OPERATORS: Record<string, { key: string; text: string }> = {
@@ -16,6 +19,9 @@ const RELATIVE_OPERATORS: Record<string, { key: string; text: string }> = {
     betweenDayOffsets: { key: 'globis.label.extended_filter_builder$operator_between_relative_days', text: 'Between today +/- days' }
 };
 
+// the operators in the order of the popup
+const OPERATORS = ['equals', 'notEqual', 'lessThan', 'greaterThan', 'inRange', 'today', 'thisWeek', 'thisMonth',
+    'dayOffset', 'beforeDayOffset', 'afterDayOffset', 'betweenDayOffsets', 'blank', 'notBlank'];
 const DATE_OPERATORS = new Set(['equals', 'notEqual', 'lessThan', 'greaterThan', 'inRange']);
 const DAYS_OPERATORS = new Set(['dayOffset', 'beforeDayOffset', 'afterDayOffset', 'betweenDayOffsets']);
 
@@ -49,32 +55,36 @@ export function getRelativeDateRange(model: any, now = new Date()): { start: num
     }
 }
 
+// local midnight of a time in epoch ms
+const startOfDay = (ms: number) => {
+    const date = new Date(ms);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+};
+
+/**
+ * The operator, the signed day counts and the date inputs of one condition of the popup.
+ */
+class DateCondition {
+    readonly operator = signal('equals');
+    readonly days = signal<number | null>(null);
+    readonly daysTo = signal<number | null>(null);
+
+    constructor(readonly from: () => HTMLInputElement | undefined, readonly to: () => HTMLInputElement | undefined) {
+    }
+}
+
 /**
  * [GLR-7459] Date filter whose popup also has the relative operators of the extended filter builder (today, this week,
- * this month, today +/- days). The floating filter stays the date picker of DateFilter for one date, other filters
- * show there as a read-only summary. The clear button and Backspace / Delete on the summary remove the filter.
+ * this month, today +/- days), with a second condition joined by AND / OR. The floating filter stays the date picker of
+ * DateFilter for one date, other filters show there as a read-only summary. The clear button and Backspace / Delete on
+ * the summary remove the filter.
  */
 @Component({
   selector: 'aggrid-datagrid-globisdatefilter',
   template: `
     <div><div class="{{ !isFloating ? 'ag-filter-body-wrapper ag-simple-filter-body-wrapper' : '' }}">
       <div [hidden]="isFloating" class="ag-picker-field ag-labeled ag-label-align-left ag-select ag-filter-select">
-        <select style="width:100%;" [(ngModel)]="selectedFilterOperation" (change)="onFilterOperationChange($event)">
-          <option value="equals">{{ equals }}</option>
-          <option value="notEqual">{{ notEqual }}</option>
-          <option value="lessThan">{{ before }}</option>
-          <option value="greaterThan">{{ after }}</option>
-          <option value="inRange">{{ inRange }}</option>
-          <option value="today">{{ labels()['today'] }}</option>
-          <option value="thisWeek">{{ labels()['thisWeek'] }}</option>
-          <option value="thisMonth">{{ labels()['thisMonth'] }}</option>
-          <option value="dayOffset">{{ labels()['dayOffset'] }}</option>
-          <option value="beforeDayOffset">{{ labels()['beforeDayOffset'] }}</option>
-          <option value="afterDayOffset">{{ labels()['afterDayOffset'] }}</option>
-          <option value="betweenDayOffsets">{{ labels()['betweenDayOffsets'] }}</option>
-          <option value="blank">{{ blank }}</option>
-          <option value="notBlank">{{ notBlank }}</option>
-        </select>
+        <ng-container *ngTemplateOutlet="operatorSelect; context: { $implicit: conditions[0] }"></ng-container>
       </div>
       <div class="ag-filter-body" [style.display]="showDateInput() ? null : 'none'">
         <div class="ag-input-wrapper">
@@ -84,7 +94,7 @@ export function getRelativeDateRange(model: any, now = new Date()): { start: num
               <i class="fas fa-calendar"></i>
             </span>
           </div>
-          <div [hidden]="isFloating || selectedFilterOperation !== 'inRange'" class="input-group" id="filterdatetimepickerTo"
+          <div [hidden]="isFloating || conditions[0].operator() !== 'inRange'" class="input-group" id="filterdatetimepickerTo"
             data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepickerTo>
             <input class="ag-filter-filter ag-input-field-input form-control" type="text" id="filterTextTo" autocomplete="off" data-td-target="#filterdatetimepickerTo" #elementTo>
             <span class="input-group-text" data-td-target="#filterdatetimepickerTo" data-td-toggle="datetimepicker">
@@ -97,17 +107,34 @@ export function getRelativeDateRange(model: any, now = new Date()): { start: num
           }
         </div>
       </div>
-      @if (!isFloating && usesDays()) {
-        <div class="ag-filter-body">
-          <div class="ag-input-wrapper" style="align-items: center; gap: 4px;">
-            <input class="ag-filter-filter ag-input-field-input ag-text-field-input" style="min-width: 0; flex: 1 1 0;" type="number" step="1" autocomplete="off"
-              [value]="days() ?? ''" (change)="onDaysChange($event, false)" (keydown.enter)="onDaysChange($event, false)">
-            @if (selectedFilterOperation === 'betweenDayOffsets') {
-              <span>–</span>
-              <input class="ag-filter-filter ag-input-field-input ag-text-field-input" style="min-width: 0; flex: 1 1 0;" type="number" step="1" autocomplete="off"
-                [value]="daysTo() ?? ''" (change)="onDaysChange($event, true)" (keydown.enter)="onDaysChange($event, true)">
-            }
+      @if (!isFloating) {
+        <ng-container *ngTemplateOutlet="daysInputs; context: { $implicit: conditions[0] }"></ng-container>
+        <div [style.display]="showSecondCondition() ? null : 'none'">
+          <div class="ag-filter-condition" style="display: flex; justify-content: center; gap: 12px; padding: 4px 0;">
+            <label><input type="radio" [name]="joinName" [checked]="join() === 'AND'" (change)="onJoinChange('AND')"> {{ andCondition }}</label>
+            <label><input type="radio" [name]="joinName" [checked]="join() === 'OR'" (change)="onJoinChange('OR')"> {{ orCondition }}</label>
           </div>
+          <div class="ag-picker-field ag-labeled ag-label-align-left ag-select ag-filter-select">
+            <ng-container *ngTemplateOutlet="operatorSelect; context: { $implicit: conditions[1] }"></ng-container>
+          </div>
+          <div class="ag-filter-body" [style.display]="usesDate(conditions[1]) ? null : 'none'">
+            <div class="ag-input-wrapper">
+              <div class="input-group" id="filterdatetimepicker2" data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepicker2>
+                <input class="ag-filter-filter ag-input-field-input form-control" type="text" id="filterText2" autocomplete="off" data-td-target="#filterdatetimepicker2" #element2>
+                <span class="input-group-text" data-td-target="#filterdatetimepicker2" data-td-toggle="datetimepicker">
+                  <i class="fas fa-calendar"></i>
+                </span>
+              </div>
+              <div [hidden]="conditions[1].operator() !== 'inRange'" class="input-group" id="filterdatetimepickerTo2"
+                data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepickerTo2>
+                <input class="ag-filter-filter ag-input-field-input form-control" type="text" id="filterTextTo2" autocomplete="off" data-td-target="#filterdatetimepickerTo2" #elementTo2>
+                <span class="input-group-text" data-td-target="#filterdatetimepickerTo2" data-td-toggle="datetimepicker">
+                  <i class="fas fa-calendar"></i>
+                </span>
+              </div>
+            </div>
+          </div>
+          <ng-container *ngTemplateOutlet="daysInputs; context: { $implicit: conditions[1] }"></ng-container>
         </div>
       }
       @if (isFloating && floatingSummary() !== null) {
@@ -127,30 +154,77 @@ export function getRelativeDateRange(model: any, now = new Date()): { start: num
         <button type="button" class="ag-button ag-standard-button ag-filter-apply-panel-button" (click)="onClearFilter()">{{ txtClearFilter }}</button>
       </div>
     }</div>
+    <ng-template #operatorSelect let-condition>
+      <select style="width:100%;" [value]="condition.operator()" (change)="onOperatorChange(condition, $event)">
+        @for (operator of operators; track operator) {
+          <option [value]="operator">{{ operatorLabels()[operator] }}</option>
+        }
+      </select>
+    </ng-template>
+    <ng-template #daysInputs let-condition>
+      @if (usesDays(condition)) {
+        <div class="ag-filter-body">
+          <div class="ag-input-wrapper" style="align-items: center; gap: 4px;">
+            <input class="ag-filter-filter ag-input-field-input ag-text-field-input" style="min-width: 0; flex: 1 1 0;" type="number" step="1" autocomplete="off"
+              [value]="condition.days() ?? ''" (change)="onDaysChange(condition.days, $event)" (keydown.enter)="onDaysChange(condition.days, $event)">
+            @if (condition.operator() === 'betweenDayOffsets') {
+              <span>–</span>
+              <input class="ag-filter-filter ag-input-field-input ag-text-field-input" style="min-width: 0; flex: 1 1 0;" type="number" step="1" autocomplete="off"
+                [value]="condition.daysTo() ?? ''" (change)="onDaysChange(condition.daysTo, $event)" (keydown.enter)="onDaysChange(condition.daysTo, $event)">
+            }
+          </div>
+        </div>
+      }
+    </ng-template>
     `,
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class GlobisDateFilter extends DateFilter implements OnDestroy {
     private readonly servoy = inject(ServoyPublicService);
-    private readonly cdRef = inject(ChangeDetectorRef);
+    private readonly formatting = inject(FormattingService);
+    private readonly renderer = inject(Renderer2);
+    private readonly document = inject(DOCUMENT);
     private i18nListener: I18NListener | null = null;
 
+    readonly element2Ref = viewChild<ElementRef>('element2');
+    readonly elementTo2Ref = viewChild<ElementRef>('elementTo2');
+    readonly filterdatetimepicker2Ref = viewChild<ElementRef>('filterdatetimepicker2');
+    readonly filterdatetimepickerTo2Ref = viewChild<ElementRef>('filterdatetimepickerTo2');
+    picker2: TempusDominus | null = null;
+    pickerTo2: TempusDominus | null = null;
+    private readonly masks: MaskFormat[] = [];
+
+    readonly operators = OPERATORS;
+    // the radio buttons of AND / OR need a name of their own per filter
+    readonly joinName = 'globis-date-filter-join-' + (++filterCount);
     before!: string;
     after!: string;
+    andCondition!: string;
+    orCondition!: string;
     // the labels of the relative operators, translated once the i18n messages arrive
     readonly labels = signal<Record<string, string>>(
         Object.fromEntries(Object.keys(RELATIVE_OPERATORS).map((operator) => [operator, RELATIVE_OPERATORS[operator].text])));
-    // the signed day counts of the relative operators
-    readonly days = signal<number | null>(null);
-    readonly daysTo = signal<number | null>(null);
+    readonly operatorLabels = computed<Record<string, string>>(() => ({
+        equals: this.equals, notEqual: this.notEqual, lessThan: this.before, greaterThan: this.after, inRange: this.inRange,
+        blank: this.blank, notBlank: this.notBlank, ...this.labels()
+    }));
+
+    // the first condition uses the inputs of DateFilter, which also make the floating filter
+    readonly conditions = [
+        new DateCondition(() => this.elementRef()?.nativeElement, () => this.elementToRef()?.nativeElement),
+        new DateCondition(() => this.element2Ref()?.nativeElement, () => this.elementTo2Ref()?.nativeElement)
+    ];
+    readonly join = signal<'AND' | 'OR'>('AND');
+    // the second condition shows once the first one filters
+    readonly showSecondCondition = signal(false);
     // the applied filter, shown by the floating filter
     readonly floatingModel = signal<any>(null);
     readonly hasFilter = computed(() => this.floatingModel() !== null);
     readonly floatingSummary = computed(() => {
         const model = this.floatingModel();
-        return model && model.type !== 'equals' ? this.getSummary(model) : null;
+        return model && (model.operator || model.type !== 'equals') ? this.getSummary(model) : null;
     });
 
     agInit(params: any): void {
@@ -158,6 +232,8 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
         const localeText = this.ngGrid.agGridOptions['localeText'] || {};
         this.before = localeText['before'] || 'Before';
         this.after = localeText['after'] || 'After';
+        this.andCondition = localeText['andCondition'] || 'AND';
+        this.orCondition = localeText['orCondition'] || 'OR';
         const operators = Object.keys(RELATIVE_OPERATORS);
         this.i18nListener = this.servoy.listenForI18NMessages(...operators.map((operator) => RELATIVE_OPERATORS[operator].key)).messages((messages) => {
             const labels: Record<string, string> = {};
@@ -170,16 +246,32 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
         });
     }
 
-    usesDate(): boolean {
-        return DATE_OPERATORS.has(this.selectedFilterOperation);
+    // DateFilter makes the date pickers of the first condition
+    ngAfterViewInit(): void {
+        super.ngAfterViewInit();
+        if (!this.isFloating) {
+            void this.ngGrid.loadCalendarLocale(this.config).promise.then(() => {
+                this.picker2 = this.createDatepicker(this.filterdatetimepicker2Ref()!.nativeElement);
+                this.pickerTo2 = this.createDatepicker(this.filterdatetimepickerTo2Ref()!.nativeElement);
+                if (this.format.isMask) {
+                    for (const input of [this.element2Ref()!.nativeElement, this.elementTo2Ref()!.nativeElement]) {
+                        this.masks.push(new MaskFormat(this.format, this.renderer, input, this.formatting, this.document));
+                    }
+                }
+            });
+        }
     }
 
-    usesDays(): boolean {
-        return DAYS_OPERATORS.has(this.selectedFilterOperation);
+    usesDate(condition: DateCondition): boolean {
+        return DATE_OPERATORS.has(condition.operator());
+    }
+
+    usesDays(condition: DateCondition): boolean {
+        return DAYS_OPERATORS.has(condition.operator());
     }
 
     showDateInput(): boolean {
-        return this.isFloating ? this.floatingSummary() === null : this.usesDate();
+        return this.isFloating ? this.floatingSummary() === null : this.usesDate(this.conditions[0]);
     }
 
     // the popup opens with the applied filter, also when it was changed without applying it
@@ -195,29 +287,65 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
     }
 
     showModel(model: any) {
-        this.selectedFilterOperation = model ? model.type : 'equals';
-        this.days.set(model?.days ?? null);
-        this.daysTo.set(model?.daysTo ?? null);
-        // the inputs only exist once the view is created
-        if (this.elementRef()) {
-            this.setFilterUIValue(model?.dateFromMs == null ? '' : this.formatForInput(model.dateFromMs));
-            this.elementToRef()!.nativeElement.value = model?.dateToMs == null ? '' : this.formatForInput(model.dateToMs);
+        const conditions = model?.operator ? model.conditions : [model];
+        this.showCondition(0, conditions[0]);
+        this.showCondition(1, conditions[1]);
+        this.join.set(model?.operator ?? 'AND');
+        this.updateSecondCondition();
+    }
+
+    showCondition(index: number, model: any) {
+        const condition = this.conditions[index];
+        condition.operator.set(model ? model.type : 'equals');
+        condition.days.set(model?.days ?? null);
+        condition.daysTo.set(model?.daysTo ?? null);
+        const from = model?.dateFromMs == null ? '' : this.formatForInput(model.dateFromMs);
+        const to = model?.dateToMs == null ? '' : this.formatForInput(model.dateToMs);
+        if (index === 0) {
+            // the inputs only exist once the view is created; setFilterUIValue also clears the pickers
+            if (this.elementRef()) {
+                this.setFilterUIValue(from);
+                this.elementToRef()!.nativeElement.value = to;
+            }
+        } else if (this.element2Ref()) {
+            this.element2Ref()!.nativeElement.value = from;
+            this.elementTo2Ref()!.nativeElement.value = to;
+            // [MOE-330] like DateFilter, otherwise picking the same date again does not trigger a change
+            if (!from) {
+                this.picker2?.clear();
+                this.pickerTo2?.clear();
+            }
         }
-        this.cdRef.markForCheck();
     }
 
     formatForInput(ms: number): string {
         return this.ngGrid.format(new Date(ms), this.format, this.format.edit && !this.format.isMask);
     }
 
-    onFilterOperationChange(event: Event): void {
-        this.selectedFilterOperation = (event.target as HTMLSelectElement).value;
+    updateSecondCondition() {
+        this.showSecondCondition.set(this.getConditionModel(this.conditions[0]) !== null);
+    }
+
+    valueChanged() {
+        if (!this.isFloating) {
+            this.updateSecondCondition();
+        }
+        super.valueChanged();
+    }
+
+    onOperatorChange(condition: DateCondition, event: Event): void {
+        condition.operator.set((event.target as HTMLSelectElement).value);
         this.valueChanged();
     }
 
-    onDaysChange(event: Event, to: boolean) {
+    onDaysChange(days: WritableSignal<number | null>, event: Event) {
         const value = Number.parseInt((event.target as HTMLInputElement).value, 10);
-        (to ? this.daysTo : this.days).set(Number.isNaN(value) ? null : value);
+        days.set(Number.isNaN(value) ? null : value);
+        this.valueChanged();
+    }
+
+    onJoinChange(join: 'AND' | 'OR') {
+        this.join.set(join);
         this.valueChanged();
     }
 
@@ -229,8 +357,7 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
 
     // the floating filter picked one date
     onFloatingFilterChanged(type: string | null, value: any) {
-        this.selectedFilterOperation = 'equals';
-        this.cdRef.markForCheck();
+        this.showModel(null);
         super.onFloatingFilterChanged(type, value);
     }
 
@@ -245,25 +372,49 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
     }
 
     getPopupModel(): any {
-        const operator = this.selectedFilterOperation;
-        if (this.usesDays()) {
-            const days = this.days();
+        const first = this.getConditionModel(this.conditions[0]);
+        const second = first ? this.getConditionModel(this.conditions[1]) : null;
+        return first && second ? { filterType: 'date', operator: this.join(), conditions: [first, second] } : first;
+    }
+
+    getConditionModel(condition: DateCondition): any {
+        const operator = condition.operator();
+        if (DAYS_OPERATORS.has(operator)) {
+            const days = condition.days();
             if (operator !== 'betweenDayOffsets') {
                 return days === null ? null : { filterType: 'date', type: operator, days };
             }
-            const daysTo = this.daysTo();
+            const daysTo = condition.daysTo();
             return days === null || daysTo === null ? null : { filterType: 'date', type: operator, days, daysTo };
         }
-        if (!this.usesDate()) {
+        if (!DATE_OPERATORS.has(operator)) {
             return { filterType: 'date', type: operator };
         }
-        const date = this.getFilterRealValue();
-        if (date === null) {
+        const uiValue = condition.from()?.value ?? '';
+        const from = this.parseDate(uiValue);
+        if (!from) {
             return null;
         }
-        const model = this.getCondition(date);
-        // a range needs both dates
-        return operator === 'inRange' && model['dateToMs'] === undefined ? null : model;
+        const model: Record<string, any> = { filterType: 'date', type: operator, uiValue, dateFrom: this.toModelDate(from), dateFromMs: from.getTime() };
+        if (operator === 'inRange') {
+            // a range needs both dates
+            const to = this.parseDate(condition.to()?.value ?? '');
+            if (!to) {
+                return null;
+            }
+            model['dateTo'] = this.toModelDate(to);
+            model['dateToMs'] = to.getTime();
+        }
+        return model;
+    }
+
+    parseDate(text: string): Date | null {
+        const parsed = this.formatting.parse(text, this.format, this.format.edit && !this.format.isMask, null, true);
+        return parsed instanceof Date && !Number.isNaN(parsed.getTime()) ? parsed : null;
+    }
+
+    toModelDate(date: Date): string {
+        return DateTimeLuxon.fromJSDate(date).toFormat('yyyy-MM-dd HH:mm:ss');
     }
 
     // the clear button of the floating filter
@@ -284,8 +435,18 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
     }
 
     getSummary(model: any): string {
+        if (model.operator) {
+            const join = model.operator === 'OR' ? this.orCondition : this.andCondition;
+            return model.conditions.map((condition: any) => this.getConditionSummary(condition)).join(' ' + join + ' ');
+        }
+        return this.getConditionSummary(model);
+    }
+
+    getConditionSummary(model: any): string {
         const date = (ms: number) => this.ngGrid.format(new Date(ms), this.format, false);
         switch (model.type) {
+            case 'equals':
+                return date(model.dateFromMs);
             case 'notEqual':
                 return '≠ ' + date(model.dateFromMs);
             case 'lessThan':
@@ -323,20 +484,58 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
 
     // the power grid filters its rows here, the data grid on the server
     doesFilterPass(params: any): boolean {
-        const range = this.model ? getRelativeDateRange(this.model) : null;
-        if (!range) {
-            return super.doesFilterPass(params);
+        const model = this.model;
+        if (!model) {
+            return true;
         }
         const value = params?.data ? params.data[this.params.colDef.field!] : null;
-        if (value === null || value === undefined || value === '') {
+        if (model.operator) {
+            const passes = (condition: any) => this.conditionPasses(condition, value);
+            return model.operator === 'OR' ? model.conditions.some(passes) : model.conditions.every(passes);
+        }
+        return this.conditionPasses(model, value);
+    }
+
+    conditionPasses(model: any, value: any): boolean {
+        const isBlank = value === null || value === undefined || value === '';
+        if (model.type === 'blank' || model.type === 'notBlank') {
+            return isBlank === (model.type === 'blank');
+        }
+        if (isBlank) {
             return false;
         }
         const time = (value instanceof Date ? value : new Date(value)).getTime();
-        return (range.start === null || time >= range.start) && (range.end === null || time <= range.end);
+        if (Number.isNaN(time)) {
+            return true;
+        }
+        const range = getRelativeDateRange(model);
+        if (range) {
+            return (range.start === null || time >= range.start) && (range.end === null || time <= range.end);
+        }
+        // a date compares on the day, like DateFilter
+        const day = startOfDay(time);
+        const from = startOfDay(model.dateFromMs);
+        switch (model.type) {
+            case 'equals':
+                return day === from;
+            case 'notEqual':
+                return day !== from;
+            case 'lessThan':
+                return day < from;
+            case 'greaterThan':
+                return day > from;
+            case 'inRange':
+                return day >= from && day <= startOfDay(model.dateToMs);
+            default:
+                return true;
+        }
     }
 
     ngOnDestroy() {
         super.ngOnDestroy();
+        this.picker2?.dispose();
+        this.pickerTo2?.dispose();
+        this.masks.forEach((mask) => mask.destroy());
         this.i18nListener?.destroy();
     }
 }
