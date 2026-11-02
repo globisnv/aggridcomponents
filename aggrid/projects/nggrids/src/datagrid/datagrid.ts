@@ -1286,16 +1286,18 @@ export class DataGrid extends NGGridDirective {
 			this.isRendered = true;
 		}
 
+		// [VCK-422] capture phase: ag grid's own checkbox listener raises selectionChanged synchronously,
+		// so the toggle event must be set before it runs
 		this.agGridElementRef()!.nativeElement.addEventListener('click', (e: any) => {
-			if (e.target.parentNode && e.target.parentNode.classList &&
-				e.target.parentNode.classList.contains('ag-checkbox-input-wrapper')) {
+			// [VCK-422] the click target can be the checkbox input or the wrapper itself
+			if (e.target.closest && e.target.closest('.ag-checkbox-input-wrapper')) {
 				const t = e.target.closest('[row-index]');
 				if (t) {
 					const rowIndex = t.getAttribute('row-index');
 					this.selectionEvent = { type: 'click', event: { ctrlKey: true, shiftKey: e.shiftKey }, rowIndex: parseInt(rowIndex, 10) };
 				}
 			}
-		});
+		}, true);
 
 		// design mode (field inspector). Delegated off the grid root on purpose: header cells are
 		// virtualised, so per-cell listeners would have to be reattached on every scroll.
@@ -4625,7 +4627,12 @@ export class DataGrid extends NGGridDirective {
 
 	cellClickHandler(params: any) {
 		if (this.enabled()) {
-			this.selectionEvent = { type: 'click', event: params.event, rowIndex: params.node.rowIndex };
+			// [VCK-422] a checkbox click is already handled as a toggle, a plain click event left behind would
+			// turn the next selection change into a single selection
+			const target = params.event && params.event.target;
+			if (!(target && target.closest && target.closest('.ag-checkbox-input-wrapper'))) {
+				this.selectionEvent = { type: 'click', event: params.event, rowIndex: params.node.rowIndex };
+			}
 			if (params.node.rowPinned) {
 				const onFooterClick = this.onFooterClick();
 				if (params.node.rowPinned === 'bottom' && onFooterClick) {
