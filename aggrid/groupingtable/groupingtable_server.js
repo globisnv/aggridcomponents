@@ -673,11 +673,18 @@ function getFilterWhereClauseForDataprovider(query, filter, dp, columnFormat) {
 				op = "like";
 				value = "%" + filter["filter"] + "%";
 				break;
+			case "notIn":
+				useNot = true;
+			case "in":
+				op = "isin";
+				value = filter["values"];
+				break;
 			case "notBlank":
 				useNot = true;
 			case "blank":
 				op = "eq";
-				value = "^=";
+				// a uuid column cannot be compared with an empty string
+				value = filter["filterType"] == "uuid" ? "^" : "^=";
 				break;
 		}
 	}
@@ -706,6 +713,12 @@ function getFilterWhereClauseForDataprovider(query, filter, dp, columnFormat) {
 				value = new Array();
 				value.push(filter["filter"]);
 				value.push(filter["filterTo"]);
+				break;
+			case "notIn":
+				useNot = true;
+			case "in":
+				op = "isin";
+				value = filter["values"];
 				break;
 			case "notBlank":
 				useNot = true;
@@ -755,6 +768,22 @@ function getFilterWhereClauseForDataprovider(query, filter, dp, columnFormat) {
 					value = null;
 				}
 				break;
+			case "today":
+			case "thisWeek":
+			case "thisMonth":
+			case "dayOffset":
+			case "betweenDayOffsets":
+				op = "between";
+				value = getRelativeDateRange(filter);
+				break;
+			case "beforeDayOffset":
+				op = "le";
+				value = getRelativeDateRange(filter)[1];
+				break;
+			case "afterDayOffset":
+				op = "ge";
+				value = getRelativeDateRange(filter)[0];
+				break;
 			case "notBlank":
 				useNot = true;
 			case "blank":
@@ -775,7 +804,7 @@ function getFilterWhereClauseForDataprovider(query, filter, dp, columnFormat) {
 		if(whereClause) {
 			if(useIgnoreCase) {
 				whereClause = whereClause["lower"];
-				value = value.toLowerCase();
+				value = Array.isArray(value) ? value.map(function(v) { return v.toLowerCase(); }) : value.toLowerCase();
 			}
 			if(useNot) {
 				whereClause = whereClause["not"];
@@ -818,6 +847,40 @@ function getConvertedDate(clientDateAsString, clientDateAsMs, columnFormat) {
 		var valueMs = new Date(clientDateAsMs);
 		return valueMs.getFullYear() + "-" + (valueMs.getMonth() + 1) + "-" + valueMs.getDate();
 	}
+}
+
+/**
+ * [GLR-7459] The [start, end] of a relative date filter of the Globis date filter, the same as getDateRangeForOperator of
+ * the extended filter builder: worked out when the query is made, so a saved filter stays relative. A null bound leaves
+ * the range open on that side.
+ */
+function getRelativeDateRange(filter) {
+	const now = new Date();
+	const dayStart = function(offset) {
+		return new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+	};
+	const dayEnd = function(offset) {
+		return new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 23, 59, 59, 999);
+	};
+	// the week runs from Monday to Sunday
+	const daysSinceMonday = (now.getDay() + 6) % 7;
+	switch(filter["type"]) {
+		case "today":
+			return [dayStart(0), dayEnd(0)];
+		case "thisWeek":
+			return [dayStart(-daysSinceMonday), dayEnd(6 - daysSinceMonday)];
+		case "thisMonth":
+			return [new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)];
+		case "dayOffset":
+			return [dayStart(filter["days"]), dayEnd(filter["days"])];
+		case "beforeDayOffset":
+			return [null, dayStart(filter["days"])];
+		case "afterDayOffset":
+			return [dayStart(filter["days"]), null];
+		case "betweenDayOffsets":
+			return [dayStart(filter["days"]), dayEnd(filter["daysTo"])];
+	}
+	return null;
 }
 
 /**
