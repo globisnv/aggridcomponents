@@ -30,6 +30,9 @@ import { isEqualWith } from 'lodash-es';
 import { RegistrationService } from './commons/registration.service';
 import { DateFilter } from '../filters/datefilter';
 import { TimeFilter } from '../filters/timefilter';
+import { GlobisValuelistFilter } from '../filters/globis/globisvaluelistfilter';
+import { GlobisDateFilter } from '../filters/globis/globisdatefilter';
+import { GlobisTextFilter } from '../filters/globis/globistextfilter';
 
 const TABLE_PROPERTIES_DEFAULTS = {
 	rowHeight: { gridOptionsProperty: 'rowHeight', default: 25 },
@@ -1006,7 +1009,11 @@ export class DataGrid extends NGGridDirective {
 				valuelistFilter: ValuelistFilter,
 				radioFilter: RadioFilter,
 				dateFilter: DateFilter,
-				timeFilter: TimeFilter
+				timeFilter: TimeFilter,
+				globisValuelistFilter: GlobisValuelistFilter,
+				globisDateFilter: GlobisDateFilter,
+				globisTextFilter: GlobisTextFilter,
+				globisNumberFilter: GlobisTextFilter
 			}
 		} as GridOptions;
 
@@ -2022,23 +2029,25 @@ export class DataGrid extends NGGridDirective {
 			if (enabled && column.filterType) {
 				colDef.filterParams = { buttons: ['apply', 'clear'], newRowsAction: 'keep', caseSensitive: false };
 
-				if (column.filterType === 'TEXT') {
-					colDef.filter = 'agTextColumnFilter';
-				} else if (column.filterType === 'NUMBER') {
-					colDef.filter = 'agNumberColumnFilter';
+				if (column.filterType === 'TEXT' || column.filterType === 'NUMBER') {
+					// [GLR-7459] the Globis filter adds a list of values, AND / OR and a clear button to the AG Grid filters
+					colDef.filter = column.filterType === 'TEXT' ? 'globisTextFilter' : 'globisNumberFilter';
+					if (!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = colDef.filter;
 				} else if (column.filterType === 'TIME') {
 					colDef.filter = 'timeFilter';
 					colDef.filterParams['suppressAndOrCondition'] = true;
 					if (!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'timeFilter';
 				} else if (column.filterType === 'DATE') {
 					//colDef.filter = 'agDateColumnFilter';
-					colDef.filter = 'dateFilter';
+					// [GLR-7459] the Globis filter adds the relative dates of the extended filter builder to the popup
+					colDef.filter = 'globisDateFilter';
 					colDef.filterParams['suppressAndOrCondition'] = true;
-					if (!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'dateFilter';
+					if (!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'globisDateFilter';
 				} else if (column.filterType === 'VALUELIST') {
-					colDef.filter = 'valuelistFilter';
+					// [GLR-7459] the Globis filter adds in / not in / blank to the popup
+					colDef.filter = 'globisValuelistFilter';
 					colDef.filterParams['suppressAndOrCondition'] = true;
-					if (!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'valuelistFilter';
+					if (!this.servoyApi().isInDesigner()) colDef.floatingFilterComponent = 'globisValuelistFilter';
 					//colDef.floatingFilterComponentParams = { suppressFilterButton : true};
 				} else if (column.filterType === 'RADIO') {
 					colDef.filter = 'radioFilter';
