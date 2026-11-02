@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, Signal, computed, signal, viewChild } from '@angular/core';
 import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
 import { ValuelistFilter } from '../valuelistfilter';
+import { getPopupBodyMaxHeight } from './popupheight';
 
 let filterCount = 0;
 
@@ -62,7 +63,7 @@ class ValuelistCondition {
           </div>
         </div></div>
       } @else {
-        <div><div class="ag-filter-body-wrapper ag-simple-filter-body-wrapper">
+        <div><div class="ag-filter-body-wrapper ag-simple-filter-body-wrapper" style="overflow-y: auto;" [style.max-height.px]="bodyMaxHeight()" #body>
           @for (condition of visibleConditions(); track $index) {
             @if ($index === 1) {
               <div class="ag-filter-condition" style="display: flex; justify-content: center; gap: 12px; padding: 4px 0;">
@@ -123,6 +124,8 @@ class ValuelistCondition {
 export class GlobisValuelistFilter extends ValuelistFilter {
 
     readonly searchRef = viewChild<ElementRef>('search');
+    readonly bodyRef = viewChild<ElementRef>('body');
+    readonly bodyMaxHeight = signal<number | null>(null);
     // the radio buttons of AND / OR need a name of their own per filter
     readonly joinName = 'globis-valuelist-filter-join-' + (++filterCount);
 
@@ -168,8 +171,15 @@ export class GlobisValuelistFilter extends ValuelistFilter {
     afterGuiAttached(): void {
       if (!this.isFloating) {
         this.showModel(this.model);
+        this.fitToWindow();
         setTimeout(() => this.searchRef()?.nativeElement.focus(), 0);
       }
+    }
+
+    // [GLR-7459] the conditions scroll when the popup does not fit in the window, so Apply and Clear stay reachable
+    fitToWindow() {
+      // once AG Grid has placed the popup
+      setTimeout(() => this.bodyMaxHeight.set(getPopupBodyMaxHeight(this.bodyRef()!.nativeElement)), 0);
     }
 
     setModel(model: any): void {

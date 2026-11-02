@@ -5,6 +5,7 @@ import type { I18NListener } from '@servoy/public';
 import type { TempusDominus } from '@eonasdan/tempus-dominus';
 import { DateTime as DateTimeLuxon } from 'luxon';
 import { DateFilter } from '../datefilter';
+import { getPopupBodyMaxHeight } from './popupheight';
 
 let filterCount = 0;
 
@@ -82,7 +83,8 @@ class DateCondition {
 @Component({
   selector: 'aggrid-datagrid-globisdatefilter',
   template: `
-    <div><div class="{{ !isFloating ? 'ag-filter-body-wrapper ag-simple-filter-body-wrapper' : '' }}">
+    <div><div class="{{ !isFloating ? 'ag-filter-body-wrapper ag-simple-filter-body-wrapper' : '' }}" [style.overflow-y]="isFloating ? null : 'auto'"
+      [style.max-height.px]="bodyMaxHeight()" #body>
       <div [hidden]="isFloating" class="ag-picker-field ag-labeled ag-label-align-left ag-select ag-filter-select">
         <ng-container *ngTemplateOutlet="operatorSelect; context: { $implicit: conditions[0] }"></ng-container>
       </div>
@@ -96,7 +98,8 @@ class DateCondition {
           </div>
           <div [hidden]="isFloating || conditions[0].operator() !== 'inRange'" class="input-group globis-date-filter-picker" id="filterdatetimepickerTo"
             data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepickerTo>
-            <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input" type="text" id="filterTextTo" autocomplete="off" data-td-target="#filterdatetimepickerTo" #elementTo>
+            <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input"
+              type="text" id="filterTextTo" autocomplete="off" data-td-target="#filterdatetimepickerTo" #elementTo>
             <span class="input-group-text" data-td-target="#filterdatetimepickerTo" data-td-toggle="datetimepicker">
               <i class="fas fa-calendar"></i>
             </span>
@@ -120,14 +123,16 @@ class DateCondition {
           <div class="ag-filter-body" [style.display]="usesDate(conditions[1]) ? null : 'none'">
             <div class="ag-input-wrapper" style="flex-direction: column; align-items: stretch; gap: 4px;">
               <div class="input-group globis-date-filter-picker" id="filterdatetimepicker2" data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepicker2>
-                <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input" type="text" id="filterText2" autocomplete="off" data-td-target="#filterdatetimepicker2" #element2>
+                <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input"
+                  type="text" id="filterText2" autocomplete="off" data-td-target="#filterdatetimepicker2" #element2>
                 <span class="input-group-text" data-td-target="#filterdatetimepicker2" data-td-toggle="datetimepicker">
                   <i class="fas fa-calendar"></i>
                 </span>
               </div>
               <div [hidden]="conditions[1].operator() !== 'inRange'" class="input-group globis-date-filter-picker" id="filterdatetimepickerTo2"
                 data-td-target-input="nearest" data-td-target-toggle="nearest" #filterdatetimepickerTo2>
-                <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input" type="text" id="filterTextTo2" autocomplete="off" data-td-target="#filterdatetimepickerTo2" #elementTo2>
+                <input class="ag-filter-filter ag-input-field-input form-control globis-date-filter-input"
+                  type="text" id="filterTextTo2" autocomplete="off" data-td-target="#filterdatetimepickerTo2" #elementTo2>
                 <span class="input-group-text" data-td-target="#filterdatetimepickerTo2" data-td-toggle="datetimepicker">
                   <i class="fas fa-calendar"></i>
                 </span>
@@ -189,6 +194,8 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
     private readonly document = inject(DOCUMENT);
     private i18nListener: I18NListener | null = null;
 
+    readonly bodyRef = viewChild<ElementRef>('body');
+    readonly bodyMaxHeight = signal<number | null>(null);
     readonly element2Ref = viewChild<ElementRef>('element2');
     readonly elementTo2Ref = viewChild<ElementRef>('elementTo2');
     readonly filterdatetimepicker2Ref = viewChild<ElementRef>('filterdatetimepicker2');
@@ -279,7 +286,14 @@ export class GlobisDateFilter extends DateFilter implements OnDestroy {
     afterGuiAttached(): void {
         if (!this.isFloating) {
             this.showModel(this.model);
+            this.fitToWindow();
         }
+    }
+
+    // [GLR-7459] the conditions scroll when the popup does not fit in the window, so Apply and Clear stay reachable
+    fitToWindow() {
+        // once AG Grid has placed the popup
+        setTimeout(() => this.bodyMaxHeight.set(getPopupBodyMaxHeight(this.bodyRef()!.nativeElement)), 0);
     }
 
     setModel(model: any): void {

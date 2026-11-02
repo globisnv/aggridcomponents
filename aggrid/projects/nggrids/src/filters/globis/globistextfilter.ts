@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, WritableSign
 import { ServoyPublicService } from '@servoy/public';
 import type { I18NListener } from '@servoy/public';
 import { FilterDirective } from '../filter';
+import { getPopupBodyMaxHeight } from './popupheight';
 
 let filterCount = 0;
 
@@ -61,7 +62,7 @@ class TextCondition {
           </div>
         </div></div>
       } @else {
-        <div><div class="ag-filter-body-wrapper ag-simple-filter-body-wrapper">
+        <div><div class="ag-filter-body-wrapper ag-simple-filter-body-wrapper" style="overflow-y: auto;" [style.max-height.px]="bodyMaxHeight()" #body>
           @for (condition of visibleConditions(); track $index) {
             @if ($index === 1) {
               <div class="ag-filter-condition" style="display: flex; justify-content: center; gap: 12px; padding: 4px 0;">
@@ -109,6 +110,8 @@ export class GlobisTextFilter extends FilterDirective implements OnDestroy {
     private debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
     readonly valueRef = viewChild<ElementRef>('value');
+    readonly bodyRef = viewChild<ElementRef>('body');
+    readonly bodyMaxHeight = signal<number | null>(null);
     // the radio buttons of AND / OR need a name of their own per filter
     readonly joinName = 'globis-text-filter-join-' + (++filterCount);
     isNumber = false;
@@ -170,8 +173,15 @@ export class GlobisTextFilter extends FilterDirective implements OnDestroy {
     afterGuiAttached(): void {
         if (!this.isFloating) {
             this.showModel(this.model);
+            this.fitToWindow();
             setTimeout(() => this.valueRef()?.nativeElement.focus(), 0);
         }
+    }
+
+    // [GLR-7459] the conditions scroll when the popup does not fit in the window, so Apply and Clear stay reachable
+    fitToWindow() {
+        // once AG Grid has placed the popup
+        setTimeout(() => this.bodyMaxHeight.set(getPopupBodyMaxHeight(this.bodyRef()!.nativeElement)), 0);
     }
 
     setModel(model: any): void {

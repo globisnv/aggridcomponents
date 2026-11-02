@@ -1,15 +1,17 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Inject, DOCUMENT, Renderer2, ElementRef, inject, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Inject, DOCUMENT, Renderer2, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { FilterDirective } from './filter';
 import { FormattingService, MaskFormat } from '@servoy/public';
 import { createTimeMaskFormat, parseMaskedTime, toHHmm } from '../time-minutes';
+import { getPopupBodyMaxHeight } from './globis/popupheight';
 
 let filterCount = 0;
 
 @Component({
   selector: 'aggrid-datagrid-timefilter',
   template: `
-    <div><div class="{{ !isFloating ? 'ag-filter-body-wrapper ag-simple-filter-body-wrapper' : '' }}">
+    <div><div class="{{ !isFloating ? 'ag-filter-body-wrapper ag-simple-filter-body-wrapper' : '' }}" [style.overflow-y]="isFloating ? null : 'auto'"
+      [style.max-height.px]="bodyMaxHeight()" #body>
       <div [hidden]="isFloating" class="ag-picker-field ag-labeled ag-label-align-left ag-select ag-filter-select">
         <select style="width:100%;" [(ngModel)]="selectedFilterOperation" (change)="onFilterOperationChange($event, 0)">
           @for (operator of operators; track operator) {
@@ -78,6 +80,8 @@ let filterCount = 0;
 })
 export class TimeFilter extends FilterDirective {
     readonly elementToRef = viewChild<ElementRef>('elementTo');
+    readonly bodyRef = viewChild<ElementRef>('body');
+    readonly bodyMaxHeight = signal<number | null>(null);
     readonly element2Ref = viewChild<ElementRef>('element2');
     readonly elementTo2Ref = viewChild<ElementRef>('elementTo2');
     // FilterDirective no longer provides one, and this component is OnPush
@@ -225,7 +229,14 @@ export class TimeFilter extends FilterDirective {
     afterGuiAttached(): void {
         if (!this.isFloating) {
             this.showModel(this.model);
+            this.fitToWindow();
         }
+    }
+
+    // [GLR-7459] the conditions scroll when the popup does not fit in the window, so Apply and Clear stay reachable
+    fitToWindow() {
+        // once AG Grid has placed the popup
+        setTimeout(() => this.bodyMaxHeight.set(getPopupBodyMaxHeight(this.bodyRef()!.nativeElement)), 0);
     }
 
     setModel(model: any): void {
