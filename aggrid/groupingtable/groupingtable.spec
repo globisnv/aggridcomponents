@@ -334,6 +334,11 @@
         },
 		"onReady": {
 			"doc": "Called when the table is ready to be shown",
+			"parameters": [{
+				"name": "event",
+				"type": "JSEvent",
+				"optional": true
+			}],
 			"allowaccess": "enabled"
 		},
 		"onColumnFormEditStarted": {
