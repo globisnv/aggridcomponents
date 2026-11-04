@@ -3575,7 +3575,7 @@ export class DataGrid extends NGGridDirective {
 			this.columnStateChange.emit(newColumnState);
 			const onColumnStateChanged = this.onColumnStateChanged();
 			if (skipFireColumnStateChanged !== true && onColumnStateChanged) {
-				onColumnStateChanged(columnStateValue, this.createJSEvent());
+				onColumnStateChanged(newColumnState, this.createJSEvent());
 			}
 		}
 	}
@@ -4761,10 +4761,12 @@ export class DataGrid extends NGGridDirective {
 		this.log.debug(event);
 
 		// store in columns the change
+		// [GLR-7492] a grouping set through the API (a restored column state) keeps the filter restored with it
+		const keepFilter = event?.source === 'api';
 		if (rowGroupCols.length === 0) {
 			if (this.isGroupView) {
 				// clear filter
-				this.agGrid()!.api.setFilterModel(null);
+				if (!keepFilter) this.agGrid()!.api.setFilterModel(null);
 				this.agGrid()!.api.deselectAll();
 			}
 			this.isGroupView = false;
@@ -4787,7 +4789,7 @@ export class DataGrid extends NGGridDirective {
 		} else {
 			if (!this.isGroupView) {
 				// clear filter
-				this.agGrid()!.api.setFilterModel(null);
+				if (!keepFilter) this.agGrid()!.api.setFilterModel(null);
 				this.agGrid()!.api.deselectAll();
 			}
 			this.isGroupView = true;
