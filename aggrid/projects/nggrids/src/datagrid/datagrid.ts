@@ -3573,7 +3573,7 @@ export class DataGrid extends NGGridDirective {
 			this.columnStateChange.emit(newColumnState);
 			const onColumnStateChanged = this.onColumnStateChanged();
 			if (skipFireColumnStateChanged !== true && onColumnStateChanged) {
-				onColumnStateChanged(columnStateValue, this.createJSEvent());
+				onColumnStateChanged(newColumnState, this.createJSEvent());
 			}
 		}
 	}
