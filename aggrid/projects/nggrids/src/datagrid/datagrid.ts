@@ -1658,7 +1658,8 @@ export class DataGrid extends NGGridDirective {
 		}
 		// [ECS-2799] the aggregation of a value column in a group row is a number (or date), also on a valuelist column
 		const aggFunc = params.node.group && params.column && params.column.getAggFunc ? params.column.getAggFunc() : null;
-		if (typeof aggFunc === 'string' && value != null && !params.node.rowPinned) {
+		// a grouped column shows its group key, the group query does not aggregate it
+		if (typeof aggFunc === 'string' && value != null && !params.node.rowPinned && !params.column.isRowGroupActive()) {
 			const dataGrid = params.context.componentParent;
 			return dataGrid.formatAggregation(value, aggFunc, dataGrid.getColumn(params.column.colId));
 		}
