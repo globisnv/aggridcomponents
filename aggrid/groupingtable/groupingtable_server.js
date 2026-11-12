@@ -131,6 +131,9 @@ $scope.getGroupedFoundsetUUID = function(
 			query.result.add(query.aggregates.count(), "svycount");
 		}
 
+		// Servoy caches the column types of a view per name for the whole client: name it after its datasource and result columns
+		let viewName = parentFoundset.getDataSource() + '_' + groupDataprovider;
+
 		// [ECS-2799] the aggregation of each value column, named like the column so the group row shows it in that column
 		if (valueColumns) {
 			for (let v = 0; v < valueColumns.length; v++) {
@@ -142,6 +145,7 @@ $scope.getGroupedFoundsetUUID = function(
 						let valueColumn = getQBColumnForDataprovider(query, valueDataprovider);
 						if (isAggregationAllowed(valueColumns[v].aggFunc, valueColumn.getTypeAsString())) {
 							query.result.add(getAggregate(valueColumn, valueColumns[v].aggFunc), getDataproviderNameForGroupingView(valueDataprovider));
+							viewName += '_' + valueDataprovider + '_' + valueColumns[v].aggFunc;
 						} else {
 							log('Cannot aggregate ' + valueDataprovider + ' with ' + valueColumns[v].aggFunc, LOG_LEVEL.WARN);
 						}
@@ -155,7 +159,7 @@ $scope.getGroupedFoundsetUUID = function(
 		// Apply header filters to the count query so svycount reflects filtered data
 		if (sFilterModel) applyFilterModelToQuery(query, sFilterModel);
 
-		childFoundset = servoyApi.getViewFoundSet("", query);
+		childFoundset = servoyApi.getViewFoundSet(viewName.replace(/\W/g, '_'), query);
 	} else { // is not a new group, will be a leaf !
 
 		if(sortColumns && sortColumns.length > 0) {
