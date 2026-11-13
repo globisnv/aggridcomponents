@@ -2927,6 +2927,15 @@ export class DataGrid extends NGGridDirective {
 					}
 					break;
 				case ChangeType.ROWS_INSERTED:
+					// [ECS-2799] A record that another client inserts (data broadcast) is added at the end of the root
+					// foundset, not in its group's block of the root, which is sorted on the group columns while grouped.
+					// Reloading the groups would count it in its group and shift the rows of the groups after it, so
+					// while grouped it is not shown until the groups are queried again (sort, filter, other grouping).
+					if (this.isTableGrouped() && foundsetManager?.isRoot) {
+						break;
+					}
+					needPurge = true;
+					break;
 				case ChangeType.ROWS_DELETED:
 					needPurge = true;
 					break;
