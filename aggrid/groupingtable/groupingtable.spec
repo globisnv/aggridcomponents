@@ -250,6 +250,16 @@
 			"allowaccess": "enabled",
 			"ignoreNGBlockDuplicateEvents": true
 		},
+		"onFilterApplied": {
+			"doc": "Called when the server has applied a changed grid filter to the foundset",
+			"parameters": [{
+				"name": "event",
+				"type": "JSEvent",
+				"optional": true
+			}],
+			"allowaccess": "enabled",
+			"ignoreNGBlockDuplicateEvents": true
+		},
 		"onColumnDataChange": {
 			"doc": "Called when the columns data is changed",
 			"parameters": [{

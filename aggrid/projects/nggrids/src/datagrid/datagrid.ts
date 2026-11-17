@@ -203,6 +203,7 @@ export class DataGrid extends NGGridDirective {
 	readonly onCellEditingStarted = input<(foundsetindex: number, columnindex: number, value: unknown, event: Event, record: unknown) => void>(undefined as any);
 	readonly onCellEditingStopped = input<(foundsetindex: number, columnindex: number, oldvalue: unknown, newvalue: unknown, event: Event, record: unknown) => void>(undefined as any);
 	readonly onColumnStateChanged = input<(columnState: string, event: Event) => void>(undefined as any);
+	readonly onFilterApplied = input<(event?: Event) => void>(undefined as any);
 	readonly onFooterClick = input<(columnindex: number, event: Event, dataTarget: string) => void>(undefined as any);
 	readonly onHeaderTextClick = input<(columnindex: number, event: Event, dataTarget: string) => void>(undefined as any);
 	readonly onHeaderClick = input<(columnindex: number, event: Event) => void>(undefined as any);
@@ -3590,6 +3591,22 @@ export class DataGrid extends NGGridDirective {
 		}
 	}
 
+	/**
+	 * Calls onFilterApplied once the server has applied the grid filter to the foundset.
+	 *
+	 * @param filterPromise the filterMyFoundset call
+	 */
+	fireFilterAppliedWhenDone(filterPromise: Promise<unknown>) {
+		filterPromise.then(() => {
+			const onFilterApplied = this.onFilterApplied();
+			if (onFilterApplied) {
+				onFilterApplied(this.createJSEvent());
+			}
+		}, () => {
+			// a failed filter is reported by the data request that waits for it
+		});
+	}
+
 	restoreColumnsState(restoreStates?: { columns: boolean, filter: boolean, sort: boolean }) {
 		const columnStateValue = this._columnState();
 		const agGrid = this.agGrid();
@@ -6022,6 +6039,8 @@ class FoundsetServer {
 			const filterPromise = this.dataGrid.servoyApi().callServerSideApi('filterMyFoundset', filterMyFoundsetArg);
 			(filterPromise as any)['requestInfo'] = this.dataGrid.getRequestInfoWithId('filterMyFoundset');
 			allPromises.push(filterPromise);
+			// [MOE-275] onColumnStateChanged comes before the filter is on the foundset, so the form gets a separate event after it
+			this.dataGrid.fireFilterAppliedWhenDone(filterPromise as unknown as Promise<unknown>);
 		}
 
 		// [ECS-2799] the rows of a group are rows of the root foundset, so selecting, clicking and editing them
