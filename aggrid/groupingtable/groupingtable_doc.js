@@ -293,6 +293,13 @@ var handlers = {
     onColumnStateChanged: function() {},
 
     /**
+     * Called when the server has applied a changed grid filter to the foundset
+     *
+     * @param {JSEvent} [event] The event object.
+     */
+    onFilterApplied: function() {},
+
+    /**
      * Called when the columns data is changed
      *
      * @param {Number} foundsetindex The index of the row that changed (1-based).

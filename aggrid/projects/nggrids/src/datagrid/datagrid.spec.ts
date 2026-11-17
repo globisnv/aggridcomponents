@@ -810,3 +810,44 @@ describe('DataGrid.isRowsOfGroup (ECS-2799)', () => {
         expect(isRowsOfGroup([{ status: 'B' }], ['A'], group)).toBe(false);
     });
 });
+
+describe('DataGrid.fireFilterAppliedWhenDone (MOE-275)', () => {
+    let component: DataGrid;
+    let onFilterApplied: ReturnType<typeof vi.fn>;
+
+    beforeEach(async () => {
+        await TestBed.configureTestingModule({
+            imports: [ServoyPublicTestingModule, FormsModule, AgGridModule, DataGrid],
+            schemas: [NO_ERRORS_SCHEMA],
+            teardown: { destroyAfterEach: false }
+        }).compileComponents();
+
+        const fixture = TestBed.createComponent(DataGrid);
+        component = fixture.componentInstance;
+        fixture.componentRef.setInput('servoyApi', new ServoyApiTesting());
+        onFilterApplied = vi.fn();
+        fixture.componentRef.setInput('onFilterApplied', onFilterApplied);
+        vi.spyOn(component, 'createJSEvent').mockReturnValue(new MouseEvent('click'));
+    });
+
+    it('calls onFilterApplied once the server has applied the filter, not before', async () => {
+        let applyFilter!: () => void;
+        const filterPromise = new Promise<void>((resolve) => applyFilter = resolve);
+
+        component.fireFilterAppliedWhenDone(filterPromise);
+        await Promise.resolve();
+        expect(onFilterApplied).not.toHaveBeenCalled();
+
+        applyFilter();
+        await filterPromise;
+        expect(onFilterApplied).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not call onFilterApplied when the filter fails', async () => {
+        const filterPromise = Promise.reject(new Error('filter failed'));
+
+        component.fireFilterAppliedWhenDone(filterPromise);
+        await filterPromise.catch(() => {});
+        expect(onFilterApplied).not.toHaveBeenCalled();
+    });
+});
