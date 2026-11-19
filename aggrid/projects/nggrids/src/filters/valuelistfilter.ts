@@ -4,6 +4,7 @@ import { merge, Observable, of, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter, switchMap } from 'rxjs/operators';
 import { FilterDirective } from './filter';
 import { NULL_VALUE } from '../commons/constants';
+import { ignoreValuelistRequestError } from '../commons/valuelist';
 
 @Component({
     selector: 'aggrid-datagrid-valuelistfilter',
@@ -73,7 +74,7 @@ export class ValuelistFilter extends FilterDirective {
           if(!this.valuelistValues) {
             const valuelist = this.ngGrid.getValuelistForFilter(this.params);
             if(valuelist) {
-              valuelistObs = valuelist.filterList('');
+              valuelistObs = valuelist.filterList('').pipe(ignoreValuelistRequestError());
               valuelistObs.subscribe(valuelistValues =>  {
                 this.valuelistValues = valuelistValues;
                 if(!this.hasApplyButton()) {

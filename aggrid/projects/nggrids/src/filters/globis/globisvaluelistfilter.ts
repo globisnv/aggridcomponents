@@ -3,6 +3,7 @@ import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
 import type { IAfterGuiAttachedParams } from 'ag-grid-community';
 import { ValuelistFilter } from '../valuelistfilter';
 import { getPopupBodyMaxHeight } from './popupheight';
+import { ignoreValuelistRequestError } from '../../commons/valuelist';
 
 let filterCount = 0;
 // the delay of the search while typing
@@ -262,7 +263,7 @@ export class GlobisValuelistFilter extends ValuelistFilter {
 
     // the server searches the whole valuelist, also the values after its first entries
     search(condition: ValuelistCondition, term: string) {
-      this.ngGrid.getValuelistForFilter(this.params)?.filterList(term).subscribe((values: any[]) => {
+      this.ngGrid.getValuelistForFilter(this.params)?.filterList(term).pipe(ignoreValuelistRequestError()).subscribe((values: any[]) => {
         // a newer search is under way
         if (condition.searchTerm() !== term) return;
         const found = this.withoutEmpty(values);

@@ -63,6 +63,7 @@ const CACHED_CHUNK_BLOCKS = 2;
 
 export { NULL_VALUE } from '../commons/constants';
 import { NULL_VALUE } from '../commons/constants';
+import { ignoreValuelistRequestError } from '../commons/valuelist';
 
 /** gap between the design mode card and the header cell it describes, in px */
 const DESIGN_HOVER_GAP = 7;
@@ -6334,7 +6335,7 @@ class FoundsetDatasource implements IServerSideDatasource {
 							const filterDeferred = new Deferred();
 							filterPromises.push(filterDeferred.promise);
 							const idx = i;
-							vl.filterList(groupKeys[i]).subscribe((valuelistValues: any) => {
+							vl.filterList(groupKeys[i]).pipe(ignoreValuelistRequestError()).subscribe((valuelistValues: any) => {
 								this.handleFilterCallback(groupKeys, idx, valuelistValues);
 								if (_this.dataGrid.removeAllFoundsetRef) {
 									_this.dataGrid.groupManager.removeFoundsetRefAtLevel(0);
