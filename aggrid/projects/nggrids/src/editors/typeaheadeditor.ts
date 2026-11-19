@@ -4,6 +4,7 @@ import { merge, Observable, of, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter, switchMap } from 'rxjs/operators';
 import { FormattingService, IPopupSupportComponent, ServoyPublicModule } from '@servoy/public';
 import { EditorDirective } from './editor';
+import { ignoreValuelistRequestError } from '../commons/valuelist';
 
 @Component({
     selector: 'aggrid-typeahededitor',
@@ -130,7 +131,7 @@ export class TypeaheadEditor extends EditorDirective implements IPopupSupportCom
 
     let valuelist = this.ngGrid.getValuelist(params);
     if (valuelist && this.ngGrid.hasValuelistResolvedDisplayData()) {
-      valuelist.filterList('').subscribe((valuelistValues: any) => {
+      valuelist.filterList('').pipe(ignoreValuelistRequestError()).subscribe((valuelistValues: any) => {
         this.valuelistValues = valuelistValues;
         this.hasRealValues = valuelist!.hasRealValues();
         if(this.hasRealValues && params.value && (params.value['realValue'] === undefined)) {
@@ -145,7 +146,7 @@ export class TypeaheadEditor extends EditorDirective implements IPopupSupportCom
           }
           if(!rvFound) {
             valuelist = this.ngGrid.getValuelist(params);
-            valuelist!.filterList(params.value).subscribe((valuelistWithInitialValue: any) => {
+            valuelist!.filterList(params.value).pipe(ignoreValuelistRequestError()).subscribe((valuelistWithInitialValue: any) => {
               for (const item of valuelistWithInitialValue) {
                 if (item.displayValue === this.initialValue) {
                   rv = item.realValue;
@@ -183,7 +184,7 @@ export class TypeaheadEditor extends EditorDirective implements IPopupSupportCom
       const valuelist = this.ngGrid.getValuelist(this.initParams);
       let valuelistObs: Observable<readonly any[]>;
       if(valuelist) {
-        valuelistObs = valuelist.filterList(term);
+        valuelistObs = valuelist.filterList(term).pipe(ignoreValuelistRequestError());
         valuelistObs.subscribe(
             valuelistValues => this.valuelistValues = valuelistValues
         );
