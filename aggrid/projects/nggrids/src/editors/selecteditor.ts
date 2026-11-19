@@ -3,6 +3,7 @@ import { EditorDirective } from './editor';
 import { ICellEditorParams } from 'ag-grid-community';
 
 import { Deferred } from '@servoy/public';
+import { ignoreValuelistRequestError } from '../commons/valuelist';
 
 @Component({
     selector: 'aggrid-selecteditor',
@@ -49,7 +50,7 @@ export class SelectEditor extends EditorDirective {
         if (vl) {
             this.valuelistValuesDefer = new Deferred();
             if(this.ngGrid.hasValuelistResolvedDisplayData()) {
-                vl.filterList('').subscribe((valuelistValues: any) => {
+                vl.filterList('').pipe(ignoreValuelistRequestError()).subscribe((valuelistValues: any) => {
                     let hasRealValues = false;
                     for (const item of valuelistValues) {
                         if (item.realValue !== item.displayValue) {
@@ -70,7 +71,7 @@ export class SelectEditor extends EditorDirective {
                         }
                         if(!rvFound) {
                             vl = this.ngGrid.getValuelist(params);
-                            vl!.filterList(params.value).subscribe((valuelistWithInitialValue: any) => {
+                            vl!.filterList(params.value).pipe(ignoreValuelistRequestError()).subscribe((valuelistWithInitialValue: any) => {
                                 for (const item of valuelistWithInitialValue) {
                                     if (item.displayValue === this.initialValue) {
                                         rv = item.realValue;
