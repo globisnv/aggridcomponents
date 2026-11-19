@@ -2,6 +2,7 @@ import type { AgFloatingFilterComponent } from 'ag-grid-angular';
 import type { FilterChangedEvent, IFilterParams, IFloatingFilterParams, IFloatingFilterParent } from 'ag-grid-community';
 import { Directive, ElementRef, signal, viewChild } from '@angular/core';
 import { NULL_VALUE } from '../commons/constants';
+import { ignoreValuelistRequestError } from '../commons/valuelist';
 import { Deferred } from '@servoy/public';
 import { NGGridDirective } from '../nggrid';
 
@@ -52,7 +53,7 @@ export class FilterDirective implements AgFloatingFilterComponent, IFloatingFilt
         const valuelist = this.ngGrid.getValuelistForFilter(this.params);
         if (valuelist) {
           this.hasValuelistSet = true;
-          valuelist.filterList('').subscribe((valuelistValues: any) => {
+          valuelist.filterList('').pipe(ignoreValuelistRequestError()).subscribe((valuelistValues: any) => {
             if(valuelistValues.isRealValueUUID) {
               this.isRealValueUUID = valuelistValues.isRealValueUUID();
             }
