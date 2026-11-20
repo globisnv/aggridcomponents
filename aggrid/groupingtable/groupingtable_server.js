@@ -431,7 +431,7 @@ function getQBColumnForDataprovider(qbQuery, dataprovider) {
 			log('Adding a join on relationName ' + relationName, LOG_LEVEL.WARN);
 
 			// use unique name for multiple level relations
-			var relationPath = relationNames.slice(0, j + 1).join("____");
+			let relationPath = getJoinAlias(relationNames.slice(0, j + 1).join("____"));
 			//				console.log(relationPath)
 			// check if already has a relation
 			var existingJoin = getJoin(join, relationPath);
@@ -449,6 +449,21 @@ function getQBColumnForDataprovider(qbQuery, dataprovider) {
 	}
 
 	return qbColumn;
+}
+
+/**
+ * [ECSD-873] The join alias for a relation path: Postgres cuts identifiers off at 63 characters, so a longer path keeps its start plus a hash
+ *
+ * @param {String} relationPath
+ * @return {String}
+ */
+function getJoinAlias(relationPath) {
+	if (relationPath.length <= 63) return relationPath;
+	let hash = 0;
+	for (let i = 0; i < relationPath.length; i++) {
+		hash = (hash * 31 + relationPath.charCodeAt(i)) | 0;
+	}
+	return relationPath.substring(0, 54) + '_' + (hash >>> 0).toString(16);
 }
 
 /**
