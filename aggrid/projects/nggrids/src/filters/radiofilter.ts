@@ -125,7 +125,13 @@ export class RadioFilter extends FilterDirective {
     }
 
     useCheckboxForFloatingFilter(): boolean {
-      return this.isFloating && this.params.colDef.context && this.params.colDef.context['floatingFilterRadioAsCheckbox'] === true;
+      // a checkbox by default, as in Servoy (SVY-20897); context.floatingFilterRadioAsCheckbox: false keeps the radio buttons
+      return this.isFloating && this.params.colDef.context?.['floatingFilterRadioAsCheckbox'] !== false;
+    }
+
+    suppressAndOrCondition(): boolean {
+      // the checkbox floating filter has no second condition: only its own value goes to the column filter
+      return this.useCheckboxForFloatingFilter() || super.suppressAndOrCondition();
     }
 
     onCheckboxClick() {
