@@ -129,6 +129,11 @@ export class RadioFilter extends FilterDirective {
       return this.isFloating && this.params.colDef.context?.['floatingFilterRadioAsCheckbox'] !== false;
     }
 
+    suppressAndOrCondition(): boolean {
+      // the checkbox floating filter has no second condition: only its own value goes to the column filter
+      return this.useCheckboxForFloatingFilter() || super.suppressAndOrCondition();
+    }
+
     onCheckboxClick() {
       this.checkboxStateValues.indexOf(this.checkboxState);
       this.checkboxState = this.checkboxStateValues[(this.checkboxStateValues.indexOf(this.checkboxState) + 1) % this.checkboxStateValues.length];
